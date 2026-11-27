@@ -3,9 +3,9 @@
 
 | Field | Value |
 |---|---|
-| Memory Version | 1.8 |
+| Memory Version | 1.9 |
 | Last Updated | 2026-11-27 |
-| Latest Completed Document | `ROSTER_FINAL_DECISION_RECONCILIATION_AND_READINESS_REPORT.md` v1.0; specification baseline finalized, execution not verified |
+| Latest Completed Document | `ORGANIZATION_FOUNDATION_AUTHORIZED_DECISIONS_UPDATE_REPORT.md` v1.0; organization/security decisions synchronized, implementation not changed |
 | Maintained By | EGM Synthesizer / Senior Architect |
 | Primary Context For | All future AI agents and project conversations |
 
@@ -19,6 +19,7 @@
 | 1.6 | 27 Nov 2026 | Pre-final reconciliation state; documents and decisions still had blockers. |
 | 1.7 | 27 Nov 2026 | Recorded final authorized reconciliation, current document versions, external setup dependencies and specification-vs-execution status. |
 | 1.8 | 27 Nov 2026 | Refreshed final versions after contract, database history, workflow, and frontend mapping alignment; recorded final validation and readiness report. |
+| 1.9 | 27 Nov 2026 | Recorded direct Product Owner decisions PO-01..12 and synchronized active organization/security contract versions; distinguished implementation blockers from settled business rules. |
 
 **Current-memory rule:** Sections 1–17 retain cumulative historical context; any prior status, version, open-decision, workload or readiness statement that conflicts with §18 is superseded. Use §18 and the current decision register for implementation.
 
@@ -619,9 +620,9 @@ After every future milestone, update this file:
 
 ---
 *Memory Version 1.6 | Last updated: 2026-11-27 | Historical pre-final draft; superseded by §18*
-## 18. Final authorized reconciliation — active baseline (27 November 2026)
+## 18. Final authorized decisions — active baseline (27 November 2026)
 
-The Product Owner explicitly authorized final policy and technical decisions within existing scope. `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.1 Part F is the active decision authority; provenance is `FINALIZED_UNDER_RECONCILIATION_AUTHORITY`, never falsely labeled prior PO approval. Its decisions supersede historical open-decision passages and earlier report conclusions.
+The Product Owner explicitly authorized final policy and technical decisions within existing scope. `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.2 Parts F and G are the active decision authority. Part F decisions retain `FINALIZED_UNDER_RECONCILIATION_AUTHORITY` provenance; Part G PO-01..12 are direct Product Owner decisions. Neither provenance is relabeled. Resolved historical open-decision passages are superseded.
 
 - Fairness counts effective published Primary assignment slots; approved replacements transfer the one slot credit. No duty completion, attendance, or actual-performer workflow exists.
 - FDR-02 comparator: hard feasibility; lexicographically minimize descending published credits plus full proposed Primary allocation across eligible employees; maximize same-team pairs among equals; maximize ascending days-since-last effective Primary vector (no history = infinity); stable canonical-input/version/slot/employee hash. No fixed cooldown.
@@ -631,7 +632,9 @@ The Product Owner explicitly authorized final policy and technical decisions wit
 - Handover is informational, immutable once submitted, corrected with linked addendum; no acknowledgment. Published and closed-period correction uses reasoned child version, `ROSTER.REVISE` initiator, distinct `ROSTER.PUBLISH` actor and immutable prior version.
 - Historical import, mutual swaps, duty completion, acknowledgement, Comp-Off, leave, attendance, payroll and ticket operations are excluded.
 - Notifications: in-app plus configured provider-neutral email; retries 1m/5m/30m/2h/12h then failed/operations alert. Accounts: invitation 24h, reset 30m, both single-use hashed; BCrypt cost 12; 12 characters/72 UTF-8-byte maximum. Flyway is the selected forward-only migration tool.
-- Security and operations baselines are in Document 11. Codex owns backend and final integration/API/E2E; Antigravity owns frontend. Document 07/OpenAPI v2.1 is the shared contract.
+- PO-01..12 settle employee write fields, effective rotation dates, unique mandatory email, Team Lead lifecycle/authority, trusted role-permission-scope resolution, one replacement approval permission, duty-history visibility, team-name limit, directory query scope and resource-level authorization.
+- Runtime security remains a release blocker until authentication and effective resource-level authorization are implemented and validated; no account is granted access by default. User permission-grant provisioning has no approved grant actor and must remain denied until customer-controlled provisioning exists.
+- Security and operations baselines are in Document 11. Codex owns backend and final integration/API/E2E; Antigravity owns frontend. Document 07/OpenAPI v3.0 is the shared contract.
 
-Current document versions: PRD v5.4; Domain v2.3; Roles v2.3; Architecture v2.4; Database v1.4; Backend v1.4; API v2.1; OpenAPI 2.1.0; Frontend v2.1; Docs 09–13 v1.0; Database Readiness Review v3.1. Final report is `ROSTER_FINAL_DECISION_RECONCILIATION_AND_READINESS_REPORT.md` v1.0. Specification completeness is distinct from execution verification. External inputs still needed: repository/handoff provisioning, timezone and actual employee/team data, named approval/publisher appointments, SMTP credentials, hosting/TLS/secrets/base URLs, operations owner and RPO/RTO. No code, migration, deployment or runtime test has been performed.
+Current document versions: PRD v5.5; Domain v2.4; Roles v2.4; Architecture v2.5; Database v1.5; Backend v1.5; API v3.0; OpenAPI 3.0.0; Frontend v3.0; Decision Register v1.2; Docs 09–13 v1.0; Database Readiness Review v3.1. Current update report is `ORGANIZATION_FOUNDATION_AUTHORIZED_DECISIONS_UPDATE_REPORT.md` v1.0; the earlier reconciliation report is retained as superseded history. Specification completeness is distinct from execution verification. External inputs still needed: repository/handoff provisioning, timezone and actual employee/team data, named approval/publisher appointments, SMTP credentials, hosting/TLS/secrets/base URLs, operations owner and RPO/RTO. No code, migration, deployment or runtime test was performed in the authorized decision-update documentation task. Existing implementation and initial migration status are outside this update.
 

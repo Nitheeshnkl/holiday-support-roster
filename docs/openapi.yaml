@@ -1,14 +1,14 @@
 openapi: 3.0.3
 info:
   title: Holiday Support Roster Management API
-  version: 2.1.0
-  description: Shared contract for the Antigravity Vanilla-JS frontend and OpenAI Codex Spring Boot backend. Approval-required decisions are marked in endpoint descriptions.
+  version: 3.0.0
+  description: Versioned shared contract. API v1 preserves the legacy employee request/response shape; API v2 applies PO-01..12 and is the current frontend target. Authorization is server-enforced.
 servers:
-  - url: '{baseUrl}/api/v1'
+  - url: '{baseUrl}'
     variables:
       baseUrl:
-        default: https://{environment-host}
-        description: Environment-specific base URL; no production URL is approved.
+        default: https://example.invalid
+        description: Safe placeholder origin; configure an environment-specific API origin, with no production URL approved.
 tags:
   - name: Session
   - name: Authorization
@@ -22,70 +22,506 @@ tags:
   - name: Notifications
   - name: Help
 paths:
-  /session/login:
+  /api/v1/session/login:
     post:
       tags: [Session]
-      operationId: login
+      operationId: v1_login
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       security: []
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}}
       responses: {'200': {description: Authenticated session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /session/logout:
+  /api/v1/session/logout:
     post:
       tags: [Session]
-      operationId: logout
+      operationId: v1_logout
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       responses: {'204': {description: Session ended}, '401': {$ref: '#/components/responses/Unauthorized'}}
-  /session/me:
+  /api/v1/session/me:
     get:
       tags: [Session]
-      operationId: getCurrentSession
+      operationId: v1_getCurrentSession
       responses: {'200': {description: Current session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}}
-  /session/password/change:
+  /api/v1/session/password/change:
     post:
       tags: [Session]
-      operationId: changePassword
+      operationId: v1_changePassword
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       summary: Change the authenticated user's password
       description: Requires current password and an active authenticated session. Passwords are 12-72 UTF-8 bytes and at least 12 characters; BCrypt cost 12. Rotates the session identifier and revokes other sessions.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordChangeInput'}}}}
       responses: {'204': {description: Password changed}, '401': {$ref: '#/components/responses/Unauthorized'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /password-reset-requests:
+  /api/v1/password-reset-requests:
     post:
       tags: [Session]
-      operationId: requestPasswordReset
+      operationId: v1_requestPasswordReset
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       security: []
       description: Always returns the same response regardless of account existence. Sends a single-use hashed reset token by configured email; token expires after 30 minutes.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordResetRequestInput'}}}}
       responses: {'202': {description: Request accepted}, '429': {description: Rate limited}}
-  /password-resets:
+  /api/v1/password-resets:
     post:
       tags: [Session]
-      operationId: resetPassword
+      operationId: v1_resetPassword
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       security: []
       description: Consumes a single-use reset token, changes password, and revokes all active sessions. Invalid or expired tokens return the same generic error.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordResetInput'}}}}
       responses: {'204': {description: Password reset}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /employees/{employeeId}/invitations:
+  /api/v1/employees/{employeeId}/invitations:
     post:
       tags: [Employees]
-      operationId: inviteEmployeeAccount
-      description: Requires ORG.USER.MANAGE. Creates or resends an employee-linked, single-use 24-hour activation invitation; only a token hash is persisted.
-      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      operationId: v1_inviteEmployeeAccount
+      description: Requires ACCOUNT.INVITE. Creates or resends an employee-linked, single-use 24-hour activation invitation; only a token hash is persisted.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
       responses: {'202': {description: Invitation queued}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
-  /account-activations:
+  /api/v1/account-activations:
     post:
       tags: [Session]
-      operationId: activateAccount
+      operationId: v1_activateAccount
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       security: []
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountActivationInput'}}}}
       responses: {'204': {description: Account activated and initial password set}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /employees/{employeeId}/account-status:
+  /api/v1/employees/{employeeId}/account-status:
+    put:
+      tags: [Employees]
+      operationId: v1_setEmployeeAccountStatus
+      description: Requires ACCOUNT.STATUS.MANAGE. Deactivation immediately revokes active sessions. Employee and audit history are retained.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountStatusInput'}}}}
+      responses: {'200': {description: Account status changed}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/authorization/approval-grants:
+    get:
+      tags: [Employees]
+      operationId: v1_listApprovalGrants
+      description: Requires ORG.AUTHORITY.MANAGE or authorized scoped visibility. Returns active and historical scoped REPLACEMENT.APPROVE grants.
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Approval grants, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrantList'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      tags: [Employees]
+      operationId: v1_createApprovalGrant
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      description: Requires ORG.AUTHORITY.MANAGE. Grantor cannot grant themselves authority. Grant must be scoped and time-bounded; no default role grants this permission.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrantInput'}}}}
+      responses: {'201': {description: Grant created, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrant'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/authorization/approval-grants/{grantId}/revoke:
+    post:
+      tags: [Employees]
+      operationId: v1_revokeApprovalGrant
+      description: Requires ORG.AUTHORITY.MANAGE. Revocation is audited and takes effect immediately; active sessions for the affected account are revoked.
+      parameters: [{$ref: '#/components/parameters/GrantId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'204': {description: Grant revoked}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/employees:
+    get:
+      tags: [Employees]
+      operationId: v1_listEmployees
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {$ref: '#/components/parameters/Active'}]
+      responses: {'200': {description: Paginated employees, content: {application/json: {schema: {$ref: '#/components/schemas/V1EmployeePage'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      tags: [Employees]
+      operationId: v1_createEmployee
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/V1EmployeeInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/V1Employee'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/employees/{employeeId}:
+    get:
+      tags: [Employees]
+      operationId: v1_getEmployee
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}]
+      responses: {'200': {description: Employee, content: {application/json: {schema: {$ref: '#/components/schemas/V1Employee'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+    patch:
+      tags: [Employees]
+      operationId: v1_updateEmployee
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/V1EmployeeInput'}}}}
+      responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/V1Employee'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/teams:
+    get:
+      tags: [Employees]
+      operationId: v1_listTeams
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Teams, content: {application/json: {schema: {$ref: '#/components/schemas/TeamList'}}}}}
+    post:
+      tags: [Employees]
+      operationId: v1_createTeam
+      description: Legacy v1 team creation retains the 160-character team-name limit.
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/V1TeamInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Team'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/employees/{employeeId}/team-memberships:
+    get:
+      tags: [Employees]
+      operationId: v1_listEmployeeTeamMemberships
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Effective-dated memberships, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembershipList'}}}}}
+    post:
+      tags: [Employees]
+      operationId: v1_createEmployeeTeamMembership
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembershipInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembership'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/authorization/roles:
+    get:
+      tags: [Employees]
+      operationId: v1_listVisibleRoles
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Visible role and permission catalogue, content: {application/json: {schema: {$ref: '#/components/schemas/RoleList'}}}}}
+  /api/v1/employees/{employeeId}/role-assignments:
+    get:
+      tags: [Employees]
+      operationId: v1_listEmployeeRoleAssignments
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Effective-dated role assignments, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignmentList'}}}}}
+    post:
+      tags: [Employees]
+      operationId: v1_createEmployeeRoleAssignment
+      description: Requires ORG.ROLE.MANAGE. Role assignment is audited and revokes affected sessions; it does not create or provision ORG.TEAM_LEAD.MANAGE or auditor/operator grants. Those permissions remain denied until a designated platform/organization owner uses the controlled audited provisioning process.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignmentInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignment'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/holidays:
+    get:
+      tags: [Holidays]
+      operationId: v1_listHolidays
+      parameters: [{$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Holidays, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayList'}}}}}
+    post:
+      tags: [Holidays]
+      operationId: v1_createHoliday
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      description: Requires CALENDAR.MANAGE. Primary count >= 1 and Standby count >= 0 are both explicit; no defaults. Combined counts may not exceed the active rotation-eligible employee pool. Availability infeasibility is reported by generation; publication remains blocked until resolved. New holiday requires staffing before generation.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Holiday'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/holidays/{holidayId}:
+    patch:
+      tags: [Holidays]
+      operationId: v1_updateHoliday
+      description: Requires CALENDAR.MANAGE. Direct update is permitted only before a published roster references this holiday. After publication, date/staffing change or cancellation must be represented in a reasoned roster revision; stable holiday identity and prior history are retained.
+      parameters: [{$ref: '#/components/parameters/HolidayId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayInput'}}}}
+      responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/Holiday'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/availability:
+    get:
+      tags: [Availability]
+      operationId: v1_listAvailability
+      parameters: [{$ref: '#/components/parameters/EmployeeIdOptional'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Availability records, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityList'}}}}}
+    post:
+      tags: [Availability]
+      operationId: v1_createAvailability
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityInput'}}}}
+      responses: {'201': {description: Recorded, content: {application/json: {schema: {$ref: '#/components/schemas/Availability'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/availability/{availabilityId}/withdraw:
+    post:
+      tags: [Availability]
+      operationId: v1_withdrawAvailability
+      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'204': {description: Withdrawn}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/availability/{availabilityId}:
+    patch:
+      tags: [Availability]
+      operationId: v1_updateAvailability
+      description: Requires AVAILABILITY.MANAGE_OWN or explicit on-behalf grant. Change is effective immediately for future generation/draft validation; never edits a published assignment. If that assignment conflicts, user must submit a replacement request. Stale drafts are invalidated and current facts are revalidated at generation and publication.
+      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityInput'}}}}
+      responses: {'200': {description: Availability updated, content: {application/json: {schema: {$ref: '#/components/schemas/Availability'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/roster-periods:
+    get:
+      tags: [Rosters]
+      operationId: v1_listRosterPeriods
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Periods, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriodList'}}}}}
+    post:
+      tags: [Rosters]
+      operationId: v1_createRosterPeriod
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriodInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriod'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/roster-periods/{periodId}/generate:
+    post:
+      tags: [Rosters]
+      operationId: v1_generateRosterDraft
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: false, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationRequest'}}}}
+      responses: {'201': {description: Draft generated, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationResult'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/roster-periods/{periodId}/roster:
+    get:
+      tags: [Rosters]
+      operationId: v1_getRoster
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/RosterStatus'}]
+      responses: {'200': {description: Roster and versions, content: {application/json: {schema: {$ref: '#/components/schemas/Roster'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /api/v1/roster-periods/{periodId}/generation-runs:
+    get:
+      tags: [Rosters]
+      operationId: v1_listGenerationRuns
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Generation metadata, explanations, and feasibility results, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationRunList'}}}}}
+  /api/v1/roster-versions/{versionId}/assignments/{assignmentId}:
+    patch:
+      tags: [Rosters]
+      operationId: v1_updateDraftAssignment
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/AssignmentId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentChangeInput'}}}}
+      responses: {'200': {description: Updated draft assignment, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/roster-versions/{versionId}/assignment-candidates:
+    get:
+      tags: [Rosters]
+      operationId: v1_listDraftAssignmentCandidates
+      summary: List currently eligible candidates for a draft roster slot
+      description: Requires ROSTER.MANUAL_ASSIGN in organization scope. Returns candidates that pass current active-employment, rotation-eligibility, availability, slot-validity, and no-other-assignment-on-this-holiday checks. Results are point-in-time and do not reserve an employee; the assignment write revalidates. No fairness score is returned by candidate discovery; the user-selected candidate is revalidated, and generation uses the approved FDR-02 comparator.
+      parameters:
+        - {$ref: '#/components/parameters/VersionId'}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - name: holidayId
+          in: query
+          required: true
+          schema: {type: integer, format: int64}
+        - name: slotType
+          in: query
+          required: true
+          schema: {type: string, enum: [PRIMARY, STANDBY]}
+        - name: slotNumber
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200': {description: Eligible and available employees for the requested slot, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentCandidateList'}, example: {items: [{employeeId: 73, displayName: Alex Morgan}], page: {number: 0, size: 25, totalElements: 1, totalPages: 1}}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/roster-versions/{versionId}/assignments:
+    post:
+      tags: [Rosters]
+      operationId: v1_createDraftAssignment
+      summary: Assign an employee to an unfilled draft slot
+      description: Requires ROSTER.MANUAL_ASSIGN in organization scope. Creates a MANUAL assignment only for an existing unfilled slot in a DRAFT version. Revalidates active employment, rotation eligibility, availability, slot identity and one-assignment-per-employee-per-holiday constraints at commit time. Requires If-Match and a reason. Persists manual origin, actor, reason, time, and an audit event. Does not permit bypass of hard checks. Automatic generation applies the approved FDR-02 fairness comparator; no client fairness score is accepted.
+      parameters:
+        - {$ref: '#/components/parameters/CsrfToken'}
+        - {$ref: '#/components/parameters/VersionId'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DraftAssignmentInput'}, example: {holidayId: 12, slotType: PRIMARY, slotNumber: 2, employeeId: 73, reason: Fill unassigned draft slot}}}}
+      responses:
+        '201': {description: Manual assignment created, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}, example: {id: 208, rosterVersionId: 41, holidayId: 12, slotType: PRIMARY, slotNumber: 2, employeeId: 73, origin: MANUAL, status: PROPOSED, reason: Fill unassigned draft slot}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/roster-versions/{versionId}/publish:
+    post:
+      tags: [Rosters]
+      operationId: v1_publishRosterVersion
+      description: Requires ROSTER.PUBLISH in scope. Revalidates current eligibility, availability, explicit staffing and gaps atomically. For any revision, publisher must differ from the revision initiator. Publishes immutable snapshot and queues notifications after commit.
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'200': {description: Published version, content: {application/json: {schema: {$ref: '#/components/schemas/RosterVersion'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/roster-versions/{versionId}/revisions:
+    post:
+      tags: [Rosters]
+      operationId: v1_createRosterRevision
+      summary: Create a reasoned correction version from a published version
+      description: Requires ROSTER.REVISE in scope. Works for open or closed periods. Creates a draft child version; does not change effective published state. Preserve the prior version. Revision initiator cannot publish the new version; another actor with ROSTER.PUBLISH must validate and publish. Revalidates current availability, eligibility and staffing. Holiday date/staffing changes and cancellation after publication use this workflow; cancellation is represented by status, never deletion. Source published version ID is unique per idempotency key.
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RosterRevisionInput'}}}}
+      responses: {'201': {description: Draft revision created, content: {application/json: {schema: {$ref: '#/components/schemas/RosterVersion'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/replacement-requests:
+    get:
+      tags: [Replacements]
+      operationId: v1_listReplacementRequests
+      parameters: [{$ref: '#/components/parameters/ReplacementStatus'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Replacement requests, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequestList'}}}}}
+    post:
+      tags: [Replacements]
+      operationId: v1_createReplacementRequest
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequestInput'}}}}
+      responses: {'201': {description: Submitted, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequest'}, example: {id: 501, requestCode: RQ-00501, originalAssignmentId: 101, requestedForEmployeeId: 73, requesterUserAccountId: 73, requesterDisplayName: Alex Morgan, holidayId: 12, holidayDate: '2026-12-25', slotType: PRIMARY, slotNumber: 1, requestReason: Unexpected unavailability, status: AWAITING_MANAGER_DECISION, suggestedStandbyAssignmentId: 102, selectedReplacementEmployeeId: null, submittedAtUtc: '2026-11-27T09:00:00Z', resolvedAtUtc: null, rowVersion: 0, staffingGap: false, decisions: []}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/replacement-requests/{requestId}/candidates:
+    get:
+      tags: [Replacements]
+      operationId: v1_listReplacementCandidates
+      description: Requires an active scoped REPLACEMENT.APPROVE grant. Returns eligible/available candidates with designated Standby first and a visible gap when none qualify. Requester, affected assignee or a proposed candidate cannot perform the approval decision; conflicts are enforced server-side. Read is point-in-time; decision revalidates.
+      parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Standby-first candidate list, content: {application/json: {schema: {$ref: '#/components/schemas/CandidateList'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v1/replacement-requests/{requestId}/decision:
+    post:
+      tags: [Replacements]
+      operationId: v1_decideReplacement
+      description: Requires active scoped REPLACEMENT.APPROVE. Reject self-approval and any requester, affected assignee or selected-candidate conflict. Requires a reason and explicit decision. Approve only a current eligible/available candidate; revalidate grant, scope, recusal, availability and version atomically. If no approver exists, request remains pending and escalates; no assignment mutation occurs.
+      parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementDecisionInput'}}}}
+      responses: {'200': {description: Terminal decision, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequest'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/standby-activations:
+    post:
+      tags: [Replacements]
+      operationId: v1_activateStandby
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      description: Requires STANDBY.ACTIVATE and an already-approved replacement decision for the same Primary slot. Records activation only; does not change assignment state or assert actual performance. The approved replacement decision/assignment lineage is the authority for effective workload credit.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StandbyActivationInput'}}}}
+      responses: {'201': {description: Activation recorded, content: {application/json: {schema: {$ref: '#/components/schemas/StandbyActivation'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/duty-history:
+    get:
+      tags: [Duty history]
+      operationId: v1_getDutyHistory
+      description: Requires DUTY.REPORT.READ and a matching OWN, assigned-TEAM, or ORG scope; auditor/operator access requires an explicit grant.
+      parameters: [{$ref: '#/components/parameters/EmployeeIdOptional'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/DutyDimension'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Separately labelled duty dimensions, content: {application/json: {schema: {$ref: '#/components/schemas/DutyHistoryPage'}}}}}
+  /api/v1/handover-reports:
+    get:
+      tags: [Handover]
+      operationId: v1_listHandoverReports
+      parameters: [{$ref: '#/components/parameters/AssignmentIdOptional'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Visible handover reports, content: {application/json: {schema: {$ref: '#/components/schemas/HandoverList'}}}}}
+    post:
+      tags: [Handover]
+      operationId: v1_createHandoverReport
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HandoverInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Handover'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/handover-reports/{handoverId}:
+    get:
+      tags: [Handover]
+      operationId: v1_getHandoverReport
+      parameters: [{$ref: '#/components/parameters/HandoverId'}]
+      responses: {'200': {description: Visible handover and items, content: {application/json: {schema: {$ref: '#/components/schemas/Handover'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      operationId: v1_listNotifications
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Current user's notifications, content: {application/json: {schema: {$ref: '#/components/schemas/NotificationList'}}}}}
+  /api/v1/notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: v1_markNotificationRead
+      parameters: [{$ref: '#/components/parameters/NotificationId'}, {$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'204': {description: Marked read}, '404': {$ref: '#/components/responses/NotFound'}}
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: v1_getUnreadNotificationCount
+      responses: {'200': {description: Current user's unread count, content: {application/json: {schema: {$ref: '#/components/schemas/UnreadCount'}}}}}
+  /api/v1/onboarding/progress:
+    get:
+      tags: [Session]
+      operationId: v1_getOnboardingProgress
+      responses: {'200': {description: Current user's resumable onboarding progress, content: {application/json: {schema: {$ref: '#/components/schemas/Onboarding'}}}}}
+    patch:
+      tags: [Session]
+      operationId: v1_updateOnboardingProgress
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OnboardingInput'}}}}
+      responses: {'200': {description: Updated onboarding progress, content: {application/json: {schema: {$ref: '#/components/schemas/Onboarding'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/audit-events:
+    get:
+      tags: [Duty history]
+      operationId: v1_listAuditEvents
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}]
+      responses: {'200': {description: Authorized audit records, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventPage'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+  /api/v1/help/articles:
+    get:
+      tags: [Help]
+      operationId: v1_listHelpArticles
+      parameters: [{$ref: '#/components/parameters/Search'}, {$ref: '#/components/parameters/CategoryId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Published visible help, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleList'}}}}}
+    post:
+      tags: [Help]
+      operationId: v1_createHelpArticle
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/help/articles/{articleId}:
+    get:
+      tags: [Help]
+      operationId: v1_getHelpArticle
+      parameters: [{$ref: '#/components/parameters/ArticleId'}]
+      responses: {'200': {description: Role-visible article, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+    patch:
+      tags: [Help]
+      operationId: v1_updateHelpArticle
+      parameters: [{$ref: '#/components/parameters/ArticleId'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleInput'}}}}
+      responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/session/csrf:
+    get:
+      tags: [Session]
+      operationId: v1_getCsrfToken
+      security: []
+      summary: Bootstrap an anonymous or authenticated session CSRF token
+      description: 'Safe unauthenticated GET. Materializes the session-backed CSRF token and returns it with Cache-Control: no-store. Public authentication POSTs still require X-CSRF-TOKEN; security: [] removes authentication only and does not disable CSRF.'
+      responses: {'200': {description: CSRF token ready, headers: {Cache-Control: {schema: {type: string}, example: no-store}, Set-Cookie: {schema: {type: string}, description: JSESSIONID session cookie; HttpOnly and Secure, with SameSite policy configured by deployment. The browser sends it automatically.}}, content: {application/json: {schema: {$ref: '#/components/schemas/CsrfTokenResponse'}}}}}
+  /api/v2/session/login:
+    post:
+      tags: [Session]
+      operationId: login
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}}
+      responses: {'200': {description: Authenticated session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/session/logout:
+    post:
+      tags: [Session]
+      operationId: logout
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'204': {description: Session ended}, '401': {$ref: '#/components/responses/Unauthorized'}}
+  /api/v2/session/me:
+    get:
+      tags: [Session]
+      operationId: getCurrentSession
+      responses: {'200': {description: Current session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}}
+  /api/v2/session/password/change:
+    post:
+      tags: [Session]
+      operationId: changePassword
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      summary: Change the authenticated user's password
+      description: Requires current password and an active authenticated session. Passwords are 12-72 UTF-8 bytes and at least 12 characters; BCrypt cost 12. Rotates the session identifier and revokes other sessions.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordChangeInput'}}}}
+      responses: {'204': {description: Password changed}, '401': {$ref: '#/components/responses/Unauthorized'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/password-reset-requests:
+    post:
+      tags: [Session]
+      operationId: requestPasswordReset
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      security: []
+      description: Always returns the same response regardless of account existence. Sends a single-use hashed reset token by configured email; token expires after 30 minutes.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordResetRequestInput'}}}}
+      responses: {'202': {description: Request accepted}, '429': {description: Rate limited}}
+  /api/v2/password-resets:
+    post:
+      tags: [Session]
+      operationId: resetPassword
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      security: []
+      description: Consumes a single-use reset token, changes password, and revokes all active sessions. Invalid or expired tokens return the same generic error.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordResetInput'}}}}
+      responses: {'204': {description: Password reset}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/employees/{employeeId}/invitations:
+    post:
+      tags: [Employees]
+      operationId: inviteEmployeeAccount
+      description: Requires ACCOUNT.INVITE with ORG scope. Creates or resends an employee-linked, single-use 24-hour activation invitation; only a token hash is persisted.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
+      responses: {'202': {description: Invitation queued}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /api/v2/account-activations:
+    post:
+      tags: [Session]
+      operationId: activateAccount
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountActivationInput'}}}}
+      responses: {'204': {description: Account activated and initial password set}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/employees/{employeeId}/account-status:
     put:
       tags: [Employees]
       operationId: setEmployeeAccountStatus
-      description: Requires ORG.USER.MANAGE. Deactivation immediately revokes active sessions. Employee and audit history are retained.
-      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}]
+      description: Requires ACCOUNT.STATUS.MANAGE with ORG scope. Deactivation immediately revokes active sessions. Employee and audit history are retained.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountStatusInput'}}}}
       responses: {'200': {description: Account status changed}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}}
-  /authorization/approval-grants:
+  /api/v2/authorization/approval-grants:
     get:
       tags: [Employees]
       operationId: listApprovalGrants
@@ -95,69 +531,79 @@ paths:
     post:
       tags: [Employees]
       operationId: createApprovalGrant
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       description: Requires ORG.AUTHORITY.MANAGE. Grantor cannot grant themselves authority. Grant must be scoped and time-bounded; no default role grants this permission.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrantInput'}}}}
       responses: {'201': {description: Grant created, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrant'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /authorization/approval-grants/{grantId}/revoke:
+  /api/v2/authorization/approval-grants/{grantId}/revoke:
     post:
       tags: [Employees]
       operationId: revokeApprovalGrant
       description: Requires ORG.AUTHORITY.MANAGE. Revocation is audited and takes effect immediately; active sessions for the affected account are revoked.
-      parameters: [{$ref: '#/components/parameters/GrantId'}, {$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/GrantId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       responses: {'204': {description: Grant revoked}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
-  /employees:
+  /api/v2/employees:
     get:
       tags: [Employees]
       operationId: listEmployees
+      description: Requires ORG.USER.READ. Scope is OWN (self only), assigned-TEAM (employees in teams where the caller is an effective Team Lead), or ORG. ADMIN receives ORG, TEAM_LEAD receives assigned-TEAM, MEMBER receives OWN, and auditors/operators require explicit audited grants.
       parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {$ref: '#/components/parameters/Active'}]
       responses: {'200': {description: Paginated employees, content: {application/json: {schema: {$ref: '#/components/schemas/EmployeePage'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
     post:
       tags: [Employees]
       operationId: createEmployee
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
+      description: Requires ORG.USER.MANAGE with ORG scope. Writes nonblank firstName, lastName and mandatory unique workEmail; displayName is derived and output-only. rotationEligibleFrom/To are inclusive and independent of employment dates; both absent means ineligible. Employee directory supports active-status filtering and pagination only; no name-search query. This v2 request contract is breaking relative to v1.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EmployeeInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Employee'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /employees/{employeeId}:
+  /api/v2/employees/{employeeId}:
     get:
       tags: [Employees]
       operationId: getEmployee
+      description: Requires ORG.USER.READ and a matching OWN, assigned-TEAM, or ORG scope; resource identifiers do not bypass scope filtering.
       parameters: [{$ref: '#/components/parameters/EmployeeId'}]
       responses: {'200': {description: Employee, content: {application/json: {schema: {$ref: '#/components/schemas/Employee'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
     patch:
       tags: [Employees]
       operationId: updateEmployee
-      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EmployeeInput'}}}}
       responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/Employee'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /teams:
+  /api/v2/teams:
     get:
       tags: [Employees]
       operationId: listTeams
+      description: Requires ORG.USER.READ and assigned-TEAM or ORG scope. Results contain only teams visible in the caller's scope.
       parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Teams, content: {application/json: {schema: {$ref: '#/components/schemas/TeamList'}}}}}
     post:
       tags: [Employees]
       operationId: createTeam
+      description: Requires ORG.TEAM.MANAGE with ORG scope. V2 team names are limited to 120 characters under PO-10.
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Team'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /employees/{employeeId}/team-memberships:
+  /api/v2/employees/{employeeId}/team-memberships:
     get:
       tags: [Employees]
       operationId: listEmployeeTeamMemberships
+      description: Requires ORG.USER.READ and a matching OWN, assigned-TEAM, or ORG scope for the employee and membership history.
       parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Effective-dated memberships, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembershipList'}}}}}
     post:
       tags: [Employees]
       operationId: createEmployeeTeamMembership
-      parameters: [{$ref: '#/components/parameters/EmployeeId'}]
+      description: Requires ORG.MEMBERSHIP.MANAGE with ORG scope. Membership intervals are inclusive and must not overlap for an employee.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembershipInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembership'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /authorization/roles:
+  /api/v2/authorization/roles:
     get:
       tags: [Employees]
       operationId: listVisibleRoles
       parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Visible role and permission catalogue, content: {application/json: {schema: {$ref: '#/components/schemas/RoleList'}}}}}
-  /employees/{employeeId}/role-assignments:
+  /api/v2/employees/{employeeId}/role-assignments:
     get:
       tags: [Employees]
       operationId: listEmployeeRoleAssignments
@@ -166,11 +612,11 @@ paths:
     post:
       tags: [Employees]
       operationId: createEmployeeRoleAssignment
-      description: Requires ORG.ROLE.MANAGE. Role/permission changes are audited and revoke all active sessions for the affected account.
-      parameters: [{$ref: '#/components/parameters/EmployeeId'}]
+      description: Requires ORG.ROLE.MANAGE. Role assignment is audited and revokes affected sessions; it does not create or provision ORG.TEAM_LEAD.MANAGE or auditor/operator grants. Those permissions remain denied until a designated platform/organization owner uses the controlled audited provisioning process.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignmentInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignment'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /holidays:
+  /api/v2/holidays:
     get:
       tags: [Holidays]
       operationId: listHolidays
@@ -179,18 +625,19 @@ paths:
     post:
       tags: [Holidays]
       operationId: createHoliday
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       description: Requires CALENDAR.MANAGE. Primary count >= 1 and Standby count >= 0 are both explicit; no defaults. Combined counts may not exceed the active rotation-eligible employee pool. Availability infeasibility is reported by generation; publication remains blocked until resolved. New holiday requires staffing before generation.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Holiday'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /holidays/{holidayId}:
+  /api/v2/holidays/{holidayId}:
     patch:
       tags: [Holidays]
       operationId: updateHoliday
       description: Requires CALENDAR.MANAGE. Direct update is permitted only before a published roster references this holiday. After publication, date/staffing change or cancellation must be represented in a reasoned roster revision; stable holiday identity and prior history are retained.
-      parameters: [{$ref: '#/components/parameters/HolidayId'}, {$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/HolidayId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayInput'}}}}
       responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/Holiday'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
-  /availability:
+  /api/v2/availability:
     get:
       tags: [Availability]
       operationId: listAvailability
@@ -199,23 +646,24 @@ paths:
     post:
       tags: [Availability]
       operationId: createAvailability
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityInput'}}}}
       responses: {'201': {description: Recorded, content: {application/json: {schema: {$ref: '#/components/schemas/Availability'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /availability/{availabilityId}/withdraw:
+  /api/v2/availability/{availabilityId}/withdraw:
     post:
       tags: [Availability]
       operationId: withdrawAvailability
-      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       responses: {'204': {description: Withdrawn}, '409': {$ref: '#/components/responses/Conflict'}}
-  /availability/{availabilityId}:
+  /api/v2/availability/{availabilityId}:
     patch:
       tags: [Availability]
       operationId: updateAvailability
       description: Requires AVAILABILITY.MANAGE_OWN or explicit on-behalf grant. Change is effective immediately for future generation/draft validation; never edits a published assignment. If that assignment conflicts, user must submit a replacement request. Stale drafts are invalidated and current facts are revalidated at generation and publication.
-      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityInput'}}}}
       responses: {'200': {description: Availability updated, content: {application/json: {schema: {$ref: '#/components/schemas/Availability'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /roster-periods:
+  /api/v2/roster-periods:
     get:
       tags: [Rosters]
       operationId: listRosterPeriods
@@ -224,35 +672,36 @@ paths:
     post:
       tags: [Rosters]
       operationId: createRosterPeriod
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriodInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriod'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /roster-periods/{periodId}/generate:
+  /api/v2/roster-periods/{periodId}/generate:
     post:
       tags: [Rosters]
       operationId: generateRosterDraft
-      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: false, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationRequest'}}}}
       responses: {'201': {description: Draft generated, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationResult'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /roster-periods/{periodId}/roster:
+  /api/v2/roster-periods/{periodId}/roster:
     get:
       tags: [Rosters]
       operationId: getRoster
       parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/RosterStatus'}]
       responses: {'200': {description: Roster and versions, content: {application/json: {schema: {$ref: '#/components/schemas/Roster'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
-  /roster-periods/{periodId}/generation-runs:
+  /api/v2/roster-periods/{periodId}/generation-runs:
     get:
       tags: [Rosters]
       operationId: listGenerationRuns
       parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Generation metadata, explanations, and feasibility results, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationRunList'}}}}}
-  /roster-versions/{versionId}/assignments/{assignmentId}:
+  /api/v2/roster-versions/{versionId}/assignments/{assignmentId}:
     patch:
       tags: [Rosters]
       operationId: updateDraftAssignment
-      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/AssignmentId'}, {$ref: '#/components/parameters/IfMatch'}]
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/AssignmentId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentChangeInput'}}}}
       responses: {'200': {description: Updated draft assignment, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /roster-versions/{versionId}/assignment-candidates:
+  /api/v2/roster-versions/{versionId}/assignment-candidates:
     get:
       tags: [Rosters]
       operationId: listDraftAssignmentCandidates
@@ -280,13 +729,14 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
-  /roster-versions/{versionId}/assignments:
+  /api/v2/roster-versions/{versionId}/assignments:
     post:
       tags: [Rosters]
       operationId: createDraftAssignment
       summary: Assign an employee to an unfilled draft slot
       description: Requires ROSTER.MANUAL_ASSIGN in organization scope. Creates a MANUAL assignment only for an existing unfilled slot in a DRAFT version. Revalidates active employment, rotation eligibility, availability, slot identity and one-assignment-per-employee-per-holiday constraints at commit time. Requires If-Match and a reason. Persists manual origin, actor, reason, time, and an audit event. Does not permit bypass of hard checks. Automatic generation applies the approved FDR-02 fairness comparator; no client fairness score is accepted.
       parameters:
+        - {$ref: '#/components/parameters/CsrfToken'}
         - {$ref: '#/components/parameters/VersionId'}
         - {$ref: '#/components/parameters/IfMatch'}
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DraftAssignmentInput'}, example: {holidayId: 12, slotType: PRIMARY, slotNumber: 2, employeeId: 73, reason: Fill unassigned draft slot}}}}
@@ -296,23 +746,23 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
-  /roster-versions/{versionId}/publish:
+  /api/v2/roster-versions/{versionId}/publish:
     post:
       tags: [Rosters]
       operationId: publishRosterVersion
       description: Requires ROSTER.PUBLISH in scope. Revalidates current eligibility, availability, explicit staffing and gaps atomically. For any revision, publisher must differ from the revision initiator. Publishes immutable snapshot and queues notifications after commit.
-      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
       responses: {'200': {description: Published version, content: {application/json: {schema: {$ref: '#/components/schemas/RosterVersion'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /roster-versions/{versionId}/revisions:
+  /api/v2/roster-versions/{versionId}/revisions:
     post:
       tags: [Rosters]
       operationId: createRosterRevision
       summary: Create a reasoned correction version from a published version
       description: Requires ROSTER.REVISE in scope. Works for open or closed periods. Creates a draft child version; does not change effective published state. Preserve the prior version. Revision initiator cannot publish the new version; another actor with ROSTER.PUBLISH must validate and publish. Revalidates current availability, eligibility and staffing. Holiday date/staffing changes and cancellation after publication use this workflow; cancellation is represented by status, never deletion. Source published version ID is unique per idempotency key.
-      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RosterRevisionInput'}}}}
       responses: {'201': {description: Draft revision created, content: {application/json: {schema: {$ref: '#/components/schemas/RosterVersion'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /replacement-requests:
+  /api/v2/replacement-requests:
     get:
       tags: [Replacements]
       operationId: listReplacementRequests
@@ -321,38 +771,40 @@ paths:
     post:
       tags: [Replacements]
       operationId: createReplacementRequest
-      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequestInput'}}}}
       responses: {'201': {description: Submitted, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequest'}, example: {id: 501, requestCode: RQ-00501, originalAssignmentId: 101, requestedForEmployeeId: 73, requesterUserAccountId: 73, requesterDisplayName: Alex Morgan, holidayId: 12, holidayDate: '2026-12-25', slotType: PRIMARY, slotNumber: 1, requestReason: Unexpected unavailability, status: AWAITING_MANAGER_DECISION, suggestedStandbyAssignmentId: 102, selectedReplacementEmployeeId: null, submittedAtUtc: '2026-11-27T09:00:00Z', resolvedAtUtc: null, rowVersion: 0, staffingGap: false, decisions: []}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /replacement-requests/{requestId}/candidates:
+  /api/v2/replacement-requests/{requestId}/candidates:
     get:
       tags: [Replacements]
       operationId: listReplacementCandidates
       description: Requires an active scoped REPLACEMENT.APPROVE grant. Returns eligible/available candidates with designated Standby first and a visible gap when none qualify. Requester, affected assignee or a proposed candidate cannot perform the approval decision; conflicts are enforced server-side. Read is point-in-time; decision revalidates.
       parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Standby-first candidate list, content: {application/json: {schema: {$ref: '#/components/schemas/CandidateList'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
-  /replacement-requests/{requestId}/decision:
+  /api/v2/replacement-requests/{requestId}/decision:
     post:
       tags: [Replacements]
       operationId: decideReplacement
       description: Requires active scoped REPLACEMENT.APPROVE. Reject self-approval and any requester, affected assignee or selected-candidate conflict. Requires a reason and explicit decision. Approve only a current eligible/available candidate; revalidate grant, scope, recusal, availability and version atomically. If no approver exists, request remains pending and escalates; no assignment mutation occurs.
-      parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementDecisionInput'}}}}
       responses: {'200': {description: Terminal decision, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequest'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /standby-activations:
+  /api/v2/standby-activations:
     post:
       tags: [Replacements]
       operationId: activateStandby
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       description: Requires STANDBY.ACTIVATE and an already-approved replacement decision for the same Primary slot. Records activation only; does not change assignment state or assert actual performance. The approved replacement decision/assignment lineage is the authority for effective workload credit.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StandbyActivationInput'}}}}
       responses: {'201': {description: Activation recorded, content: {application/json: {schema: {$ref: '#/components/schemas/StandbyActivation'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /duty-history:
+  /api/v2/duty-history:
     get:
       tags: [Duty history]
       operationId: getDutyHistory
+      description: Requires DUTY.REPORT.READ. ADMIN receives ORG; TEAM_LEAD receives OWN plus assigned-TEAM; MEMBER receives OWN; auditors/operators receive only explicitly granted scope. The backend filters every employee and team identifier.
       parameters: [{$ref: '#/components/parameters/EmployeeIdOptional'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/DutyDimension'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Separately labelled duty dimensions, content: {application/json: {schema: {$ref: '#/components/schemas/DutyHistoryPage'}}}}}
-  /handover-reports:
+  /api/v2/handover-reports:
     get:
       tags: [Handover]
       operationId: listHandoverReports
@@ -361,32 +813,33 @@ paths:
     post:
       tags: [Handover]
       operationId: createHandoverReport
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HandoverInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Handover'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /handover-reports/{handoverId}:
+  /api/v2/handover-reports/{handoverId}:
     get:
       tags: [Handover]
       operationId: getHandoverReport
       parameters: [{$ref: '#/components/parameters/HandoverId'}]
       responses: {'200': {description: Visible handover and items, content: {application/json: {schema: {$ref: '#/components/schemas/Handover'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
-  /notifications:
+  /api/v2/notifications:
     get:
       tags: [Notifications]
       operationId: listNotifications
       parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
       responses: {'200': {description: Current user's notifications, content: {application/json: {schema: {$ref: '#/components/schemas/NotificationList'}}}}}
-  /notifications/{notificationId}/read:
+  /api/v2/notifications/{notificationId}/read:
     post:
       tags: [Notifications]
       operationId: markNotificationRead
-      parameters: [{$ref: '#/components/parameters/NotificationId'}]
+      parameters: [{$ref: '#/components/parameters/NotificationId'}, {$ref: '#/components/parameters/CsrfToken'}]
       responses: {'204': {description: Marked read}, '404': {$ref: '#/components/responses/NotFound'}}
-  /notifications/unread-count:
+  /api/v2/notifications/unread-count:
     get:
       tags: [Notifications]
       operationId: getUnreadNotificationCount
       responses: {'200': {description: Current user's unread count, content: {application/json: {schema: {$ref: '#/components/schemas/UnreadCount'}}}}}
-  /onboarding/progress:
+  /api/v2/onboarding/progress:
     get:
       tags: [Session]
       operationId: getOnboardingProgress
@@ -394,15 +847,16 @@ paths:
     patch:
       tags: [Session]
       operationId: updateOnboardingProgress
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OnboardingInput'}}}}
       responses: {'200': {description: Updated onboarding progress, content: {application/json: {schema: {$ref: '#/components/schemas/Onboarding'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /audit-events:
+  /api/v2/audit-events:
     get:
       tags: [Duty history]
       operationId: listAuditEvents
       parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}]
       responses: {'200': {description: Authorized audit records, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventPage'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
-  /help/articles:
+  /api/v2/help/articles:
     get:
       tags: [Help]
       operationId: listHelpArticles
@@ -411,9 +865,10 @@ paths:
     post:
       tags: [Help]
       operationId: createHelpArticle
+      parameters: [{$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleInput'}}}}
       responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
-  /help/articles/{articleId}:
+  /api/v2/help/articles/{articleId}:
     get:
       tags: [Help]
       operationId: getHelpArticle
@@ -422,14 +877,62 @@ paths:
     patch:
       tags: [Help]
       operationId: updateHelpArticle
-      parameters: [{$ref: '#/components/parameters/ArticleId'}]
+      parameters: [{$ref: '#/components/parameters/ArticleId'}, {$ref: '#/components/parameters/CsrfToken'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleInput'}}}}
       responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/session/csrf:
+    get:
+      tags: [Session]
+      operationId: getCsrfToken
+      security: []
+      summary: Bootstrap an anonymous or authenticated session CSRF token
+      description: 'Safe unauthenticated GET. Materializes the session-backed CSRF token and returns it with Cache-Control: no-store. Public authentication POSTs still require X-CSRF-TOKEN; security: [] removes authentication only and does not disable CSRF.'
+      responses: {'200': {description: CSRF token ready, headers: {Cache-Control: {schema: {type: string}, example: no-store}, Set-Cookie: {schema: {type: string}, description: JSESSIONID session cookie; HttpOnly and Secure, with SameSite policy configured by deployment. The browser sends it automatically.}}, content: {application/json: {schema: {$ref: '#/components/schemas/CsrfTokenResponse'}}}}}
+  /api/v2/teams/{teamId}/team-lead-assignments:
+    get:
+      tags: [Employees]
+      operationId: listTeamLeadAssignments
+      description: Requires ORG.USER.READ. OWN permits only the caller's own assignment history; assigned-TEAM permits teams where the caller has effective Team Lead responsibility; ORG permits organization-wide history. ADMIN receives ORG scope, TEAM_LEAD receives assigned-TEAM scope, MEMBER receives OWN scope, and auditor/operator access requires an explicit active grant. Scope never follows from a role or title alone. TEAM scope derives from an effective Team Lead responsibility or an explicit grant. The response ETag is the authoritative team assignment collection version derived from the persistent team rowVersion, including when the history is empty.
+      parameters: [{$ref: '#/components/parameters/TeamId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Scoped current and historical inclusive intervals, headers: {ETag: {schema: {type: string}, description: Team assignment collection ETag used by appointment and replacement If-Match.}}, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignmentList'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}}
+    post:
+      tags: [Employees]
+      operationId: assignTeamLead
+      description: Requires ADMIN role plus ORG.TEAM_LEAD.MANAGE permission and ORG scope. Creates a new non-overlapping assignment. Intervals are inclusive and may not overlap any existing assignment. The assignee must hold the TEAM_LEAD role and membership in this team throughout the inclusive interval. Role or membership changes cannot silently invalidate an existing active/future responsibility; use the explicit lifecycle operation and audit it. If-Match is always required and must equal the team assignment collection ETag returned by GET, including for the initial appointment. Replacements use replaceTeamLead. Transactionally lock/version the team, validate overlaps and prerequisites, insert the assignment, append an audit event, and advance the collection version. Stale ETags return 409.
+      parameters: [{$ref: '#/components/parameters/TeamId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignmentInput'}}}}
+      responses: {'201': {description: Assignment created, headers: {ETag: {schema: {type: string}, description: Updated team assignment collection ETag.}}, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignment'}}}}, '400': {description: Malformed request}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/teams/{teamId}/team-lead-assignments/{assignmentId}/replacement:
+    post:
+      tags: [Employees]
+      operationId: replaceTeamLead
+      description: Requires ADMIN role plus ORG.TEAM_LEAD.MANAGE permission and ORG scope. Atomically ends the predecessor the day before the successor's inclusive effectiveFrom date, inserts the successor, appends audit facts, and advances the collection version. If-Match is the team assignment collection ETag from GET. Intervals are inclusive and may not overlap any existing assignment. The successor must hold the TEAM_LEAD role and team membership throughout the new interval. Role or membership changes cannot silently invalidate an existing active/future responsibility. Reject overlaps and stale ETags; no partial state is committed.
+      parameters: [{$ref: '#/components/parameters/TeamId'}, {$ref: '#/components/parameters/TeamLeadAssignmentId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadReplacementInput'}}}}
+      responses: {'200': {description: Assignment replaced, headers: {ETag: {schema: {type: string}, description: Updated team assignment collection ETag.}}, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignment'}}}}, '400': {description: Malformed request}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/teams/{teamId}/team-lead-assignments/{assignmentId}/terminate:
+    post:
+      tags: [Employees]
+      operationId: terminateTeamLeadAssignment
+      description: Requires ADMIN role plus ORG.TEAM_LEAD.MANAGE permission and ORG scope. Ends the inclusive responsibility interval at effectiveTo. Require If-Match equal to the assignment rowVersion; increment rowVersion and collection version, append an audit event, and retain the historical row. Stale versions return 409.
+      parameters: [{$ref: '#/components/parameters/TeamId'}, {$ref: '#/components/parameters/TeamLeadAssignmentId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadTerminationInput'}}}}
+      responses: {'200': {description: Assignment terminated, headers: {ETag: {schema: {type: string}}}, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignment'}}}}, '400': {description: Malformed request}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v2/teams/{teamId}/team-lead-assignments/{assignmentId}:
+    patch:
+      tags: [Employees]
+      operationId: correctTeamLeadAssignmentHistory
+      description: Requires ADMIN role plus ORG.TEAM_LEAD.MANAGE permission and ORG scope. Corrects the historical inclusive interval only; retain the assignment, increment rowVersion and collection version, and append actor, timestamp, and before/after facts to the audit log. No user-entered reason is required. Require If-Match equal to assignment rowVersion. Reject overlap and stale version; no partial state is committed.
+      parameters: [{$ref: '#/components/parameters/TeamId'}, {$ref: '#/components/parameters/TeamLeadAssignmentId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/CsrfToken'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignmentCorrectionInput'}}}}
+      responses: {'200': {description: Corrected assignment, headers: {ETag: {schema: {type: string}}}, content: {application/json: {schema: {$ref: '#/components/schemas/TeamLeadAssignment'}}}}, '400': {description: Malformed request}, '401': {$ref: '#/components/responses/Unauthorized'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
 components:
   securitySchemes: {sessionCookie: {type: apiKey, in: cookie, name: JSESSIONID, description: HttpOnly Spring Security session cookie; CSRF token required for state-changing browser requests.}}
   parameters:
     GrantId: {name: grantId, in: path, required: true, schema: {type: integer, format: int64}}
     EmployeeId: {name: employeeId, in: path, required: true, schema: {type: integer, format: int64}}
+    TeamId: {name: teamId, in: path, required: true, schema: {type: integer, format: int64}}
+    TeamLeadAssignmentId: {name: assignmentId, in: path, required: true, schema: {type: integer, format: int64}}
     EmployeeIdOptional: {name: employeeId, in: query, schema: {type: integer, format: int64}}
     HolidayId: {name: holidayId, in: path, required: true, schema: {type: integer, format: int64}}
     AvailabilityId: {name: availabilityId, in: path, required: true, schema: {type: integer, format: int64}}
@@ -451,6 +954,7 @@ components:
     RosterStatus: {name: status, in: query, schema: {type: string, enum: [DRAFT, REVIEWED, PUBLISHED]}}
     ReplacementStatus: {name: status, in: query, schema: {type: string, enum: [SUBMITTED, AWAITING_MANAGER_DECISION, APPROVED, REJECTED, UNRESOLVED_STAFFING_GAP, CANCELLED]}}
     DutyDimension: {name: dimension, in: query, required: true, schema: {type: string, enum: [EFFECTIVE_PUBLISHED_PRIMARY_CREDIT, FUTURE_PUBLISHED_PRIMARY, STANDBY_ASSIGNMENT, STANDBY_ACTIVATION, DRAFT_ASSIGNMENT, REPLACED_ASSIGNMENT, CANCELLED_ASSIGNMENT]}}
+    CsrfToken: {name: X-CSRF-TOKEN, in: header, required: true, schema: {type: string}, description: Session-backed token returned by GET /api/v2/session/csrf; required for every unsafe request including public auth operations.}
     IfMatch: {name: If-Match, in: header, required: true, schema: {type: string}, description: Current row/version ETag; stale value returns 409.}
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
   responses:
@@ -473,15 +977,26 @@ components:
     RosterRevisionInput: {type: object, required: [reason, changes], properties: {reason: {type: string, minLength: 1, maxLength: 1000}, changes: {type: array, minItems: 1, items: {type: object, required: [holidayId, changeType], properties: {holidayId: {type: integer, format: int64}, changeType: {type: string, enum: [ASSIGNMENT, DATE, STAFFING, CANCELLATION]}, holidayDate: {type: string, format: date, nullable: true}, primaryCount: {type: integer, minimum: 1, nullable: true}, standbyCount: {type: integer, minimum: 0, nullable: true}, employeeId: {type: integer, format: int64, nullable: true}, slotType: {type: string, enum: [PRIMARY, STANDBY], nullable: true}, slotNumber: {type: integer, minimum: 1, nullable: true}, cancelled: {type: boolean, nullable: true}}}}}}
     Session: {type: object, required: [user, csrfToken, onboarding], properties: {user: {$ref: '#/components/schemas/CurrentUser'}, csrfToken: {type: string, readOnly: true}, onboarding: {$ref: '#/components/schemas/Onboarding'}}}
     CurrentUser: {type: object, properties: {id: {type: integer, format: int64}, employeeId: {type: integer, format: int64}, displayName: {type: string}, roles: {type: array, items: {type: string}}, permissions: {type: array, items: {type: string}}, scopes: {type: array, items: {type: string}}}}
-    EmployeeInput: {type: object, required: [employeeCode, displayName, workEmail, employmentStartDate], properties: {employeeCode: {type: string, maxLength: 40}, displayName: {type: string, maxLength: 160}, workEmail: {type: string, format: email, maxLength: 254}, employmentStartDate: {type: string, format: date}, employmentEndDate: {type: string, format: date, nullable: true}, rotationEligible: {type: boolean}}}
-    Employee: {allOf: [{$ref: '#/components/schemas/EmployeeInput'}, {type: object, required: [id, active, rowVersion], properties: {id: {type: integer, format: int64, readOnly: true}, active: {type: boolean, readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}}}]}
+    CsrfTokenResponse: {type: object, required: [csrfToken], properties: {csrfToken: {type: string, readOnly: true}}}
+    V1EmployeeInput: {type: object, required: [employeeCode, displayName, workEmail, employmentStartDate], properties: {employeeCode: {type: string, maxLength: 40}, displayName: {type: string, maxLength: 160}, workEmail: {type: string, format: email, maxLength: 254}, employmentStartDate: {type: string, format: date}, employmentEndDate: {type: string, format: date, nullable: true}, rotationEligible: {type: boolean}}}
+    V1Employee: {allOf: [{$ref: '#/components/schemas/V1EmployeeInput'}, {type: object, required: [id, active, rowVersion], properties: {id: {type: integer, format: int64, readOnly: true}, active: {type: boolean, readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}}}]}
+    V1EmployeePage: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/V1Employee'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    EmployeeInput: {type: object, required: [employeeCode, firstName, lastName, workEmail, employmentStartDate], properties: {employeeCode: {type: string, maxLength: 40}, firstName: {type: string, minLength: 1, maxLength: 100}, lastName: {type: string, minLength: 1, maxLength: 100}, workEmail: {type: string, format: email, maxLength: 254, description: Mandatory and unique per employee.}, employmentStartDate: {type: string, format: date}, employmentEndDate: {type: string, format: date, nullable: true}, rotationEligibleFrom: {type: string, format: date, nullable: true}, rotationEligibleTo: {type: string, format: date, nullable: true}}, description: Eligibility bounds are inclusive and independent of employment dates; both absent means ineligible.}
+    Employee: {allOf: [{$ref: '#/components/schemas/EmployeeInput'}, {type: object, required: [id, displayName, active, rowVersion], properties: {id: {type: integer, format: int64, readOnly: true}, displayName: {type: string, readOnly: true, description: Derived from firstName and lastName.}, active: {type: boolean, readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}}}]}
     EmployeePage: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Employee'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
     Team: {type: object, properties: {id: {type: integer, format: int64}, code: {type: string}, name: {type: string}, active: {type: boolean}}}
-    TeamInput: {type: object, required: [code, name], properties: {code: {type: string, maxLength: 40}, name: {type: string, maxLength: 160}}}
+    V1TeamInput: {type: object, required: [code, name], properties: {code: {type: string, maxLength: 40}, name: {type: string, maxLength: 160}}}
+    TeamInput: {type: object, required: [code, name], properties: {code: {type: string, maxLength: 40}, name: {type: string, maxLength: 120}}}
     TeamList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Team'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
     TeamMembershipInput: {type: object, required: [teamId, effectiveFrom], properties: {teamId: {type: integer, format: int64}, effectiveFrom: {type: string, format: date}, effectiveTo: {type: string, format: date, nullable: true}}}
     TeamMembership: {allOf: [{$ref: '#/components/schemas/TeamMembershipInput'}, {type: object, properties: {id: {type: integer, format: int64}, employeeId: {type: integer, format: int64}, status: {type: string}}}]}
     TeamMembershipList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/TeamMembership'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    TeamLeadAssignmentInput: {type: object, required: [employeeId, effectiveFrom], properties: {employeeId: {type: integer, format: int64}, effectiveFrom: {type: string, format: date}}}
+    TeamLeadReplacementInput: {type: object, required: [employeeId, effectiveFrom], properties: {employeeId: {type: integer, format: int64}, effectiveFrom: {type: string, format: date}}}
+    TeamLeadTerminationInput: {type: object, required: [effectiveTo], properties: {effectiveTo: {type: string, format: date, description: Inclusive final date; must be on or after effectiveFrom and before any overlapping successor.}}}
+    TeamLeadAssignmentCorrectionInput: {type: object, required: [effectiveFrom], properties: {effectiveFrom: {type: string, format: date}, effectiveTo: {type: string, format: date, nullable: true}}}
+    TeamLeadAssignment: {type: object, required: [id, teamId, employeeId, effectiveFrom, assignedByUserAccountId, rowVersion], properties: {id: {type: integer, format: int64, readOnly: true}, teamId: {type: integer, format: int64, readOnly: true}, employeeId: {type: integer, format: int64, readOnly: true}, effectiveFrom: {type: string, format: date, readOnly: true}, effectiveTo: {type: string, format: date, nullable: true, readOnly: true}, assignedByUserAccountId: {type: integer, format: int64, nullable: true, readOnly: true, description: Null is permitted only for legacy historical rows; all new writes record the authenticated actor.}, rowVersion: {type: integer, format: int64, readOnly: true, description: Monotonically increments on each termination or correction.}}}
+    TeamLeadAssignmentList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/TeamLeadAssignment'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
     Role: {type: object, properties: {id: {type: integer, format: int64}, code: {type: string}, name: {type: string}, permissions: {type: array, items: {type: string}}}}
     RoleList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Role'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
     RoleAssignmentInput: {type: object, required: [roleId, effectiveFrom], properties: {roleId: {type: integer, format: int64}, effectiveFrom: {type: string, format: date}, effectiveTo: {type: string, format: date, nullable: true}}}

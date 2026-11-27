@@ -1,0 +1,160 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 100%;
+  line-height: 1.5;
+  color: var(--color-ink);
+  background-color: var(--color-canvas);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-block-size: 100dvb;
+  color: var(--color-ink);
+  background-color: var(--color-canvas);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin-block: 0;
+  color: var(--color-ink);
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 1.25rem + 1vw, 2rem);
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+
+h3 {
+  font-size: 1.0625rem;
+  font-weight: 650;
+}
+
+p {
+  margin-block: 0;
+  max-inline-size: 72ch;
+}
+
+ul,
+ol {
+  margin-block: 0;
+  padding-inline-start: 1.25rem;
+}
+
+a {
+  color: var(--color-primary);
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+code {
+  background-color: var(--color-surface-subtle);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+pre {
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  overflow: auto;
+  margin-block: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+[inert],
+[inert] * {
+  opacity: 0.6;
+  user-select: none;
+}
+
+/* Accessible visually hidden utility that permits focusable skip links */
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.skip-link {
+  position: fixed;
+  inset-block-start: var(--space-3);
+  inset-inline-start: var(--space-3);
+  z-index: 200;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  color: #ffffff;
+  outline: 3px solid var(--color-ink);
+}
+
+.muted {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.startup-loading {
+  display: grid;
+  place-content: center;
+  min-block-size: 100dvb;
+  padding: var(--space-6);
+  color: var(--color-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,64 @@
+:root {
+  color-scheme: light;
+
+  /* Brand & surface tokens from Document 08 §5.1 */
+  --color-ink: #172b3a;
+  --color-muted: #526776;
+  --color-canvas: #f5f8fa;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #edf3f7;
+  --color-border: #cbd7df;
+  --color-input-border: #687c8c;
+  --color-primary: #145b73;
+  --color-primary-hover: #10485b;
+  --color-primary-tint: #e6f2f6;
+  --color-focus: #0b67a3;
+
+  /* Accessible semantic status tokens (WCAG 2.2 AA verified >= 4.5:1 text contrast) */
+  --color-success: #176b48;
+  --color-success-bg: #eaf6f0;
+  --color-success-border: #8ec9ae;
+
+  --color-warning: #815500;
+  --color-warning-bg: #fef6e6;
+  --color-warning-border: #dfb35c;
+
+  --color-danger: #a12d32;
+  --color-danger-bg: #fceeee;
+  --color-danger-border: #dfa3a6;
+
+  --color-info: #245d8c;
+  --color-info-bg: #ebf3fa;
+  --color-info-border: #9ec0dc;
+
+  --color-draft-bg: #fff8eb;
+  --color-draft-border: #b87b00;
+  --color-draft-ink: #6e4800;
+
+  /* Spacing scale (4px increments) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+
+  /* Radii & elevation */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --shadow-panel: 0 1px 3px rgb(23 43 58 / 12%);
+  --shadow-overlay: 0 10px 30px rgb(23 43 58 / 22%);
+
+  /* Typography */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Layout metrics */
+  --content-max: 80rem;
+  --sidebar-width: 16.5rem;
+  --header-height: 3.75rem;
+  --touch-min: 2.75rem; /* 44px */
+}

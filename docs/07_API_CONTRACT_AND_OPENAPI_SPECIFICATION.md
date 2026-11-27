@@ -4,13 +4,13 @@
 | Field | Value |
 |---|---|
 | Document ID | ROSTER-API-007 |
-| Version | 2.1 |
+| Version | 3.0 |
 | Status | Finalized implementation contract under authorized reconciliation |
 | Created / updated | 27 November 2026 |
 | Owner | API Architecture / Backend Architecture |
 | Machine-readable contract | `openapi.yaml` (OpenAPI 3.0.3) |
 | Shared consumers | Antigravity frontend; OpenAI Codex backend |
-| Authority | `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.1; Documents 01–06 current versions |
+| Authority | `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.2; Documents 01–06 current versions |
 
 ### Revision history
 
@@ -21,6 +21,8 @@
 | 1.2 | 27 Nov 2026 | Reconciled response schemas and collection pagination against existing screens and data model; aligned OpenAPI version to 1.2.0-draft. No new business workflow was added; unresolved policies remain conditional. |
 | 2.0 | 27 Nov 2026 | Finalized account lifecycle, scoped approval-grant administration, published/closed-period revision, and decision-aligned workload/availability/notification behavior; synchronized OpenAPI 2.0.0. Duty-completion and handover acknowledgement remain excluded. |
 | 2.1 | 27 Nov 2026 | Synchronized availability update and holiday change-history validation, effective-date grant schemas, replacement recusal errors, seven workload dimensions, and standby activation semantics with the final database model. |
+| 2.2 | 27 Nov 2026 | Applied authorized PO-01..12 organization contracts, effective Team Lead lifecycle and scope rules, and synchronized API/OpenAPI employee and permission contracts. |
+| 3.0 | 27 Nov 2026 | Preserved legacy employee payloads under `/api/v1`, moved breaking employee contract changes to `/api/v2`, and finalized CSRF bootstrap, Team Lead concurrency, scopes and frontend API alignment. |
 
 ## 1. Purpose and scope
 
@@ -32,20 +34,30 @@ Both agents must implement only this versioned contract. Contract changes requir
 
 ## 2. Architecture and API conventions
 
-- Base URL: `{baseUrl}/api/v1`; `{baseUrl}` is environment configuration, not a production URL.
+- Base URL: current client uses `{baseUrl}/api/v2`; OpenAPI explicitly retains `/api/v1` legacy paths. `{baseUrl}` is environment configuration, not a production URL.
 - JSON UTF-8 request/response bodies; field names are lowerCamelCase; IDs are integer `int64` values.
 - Dates use `YYYY-MM-DD`; timestamps use UTC RFC 3339 `date-time`; business-date interpretation uses the organisation timezone.
 - Collections use `{ items, page }`, with `page` zero-based and `pageSize` 1–100 (default 25). Filter/sort support is limited to documented query parameters.
 - `POST` creates or performs commands; `PATCH` changes mutable draft/admin data; `GET` is read-only. Published facts are never patched.
 - State-changing browser requests use the authenticated Spring Security session cookie plus CSRF token. No JWT, OAuth, refresh-token mechanism, or production host is introduced.
 - Mutation of `rowVersion` resources requires `If-Match`; stale state returns `409 CONCURRENT_MODIFICATION`. Generation, publication and replacement commands require `Idempotency-Key` and return the prior compatible result for a duplicate key.
-- Backward-compatible additions are permitted in `/v1`; breaking changes require a new API version and migration plan.
+- Breaking employee payload changes are isolated to `/api/v2`; `/api/v1` retains its `displayName` and `rotationEligible` employee schema. The contract does not assert that a backend runtime has implemented either version.
 
 ## 3. Authentication and authorization
 
-`POST /session/login` establishes a secure HttpOnly session. `GET /session/me` returns the non-sensitive principal, effective roles/permissions/scopes, CSRF token and onboarding state. `POST /session/logout` ends the session. Account invitation/activation, password reset, password change and deactivation follow FDR-13: minimum 12 characters, maximum 72 UTF-8 bytes, BCrypt cost 12; single-use hashed invitation token (24 hours) and reset token (30 minutes); generic non-enumerating reset response; sessions revoked after reset, deactivation or permission change.
+`POST /api/v2/session/login` establishes a secure HttpOnly session. `GET /api/v2/session/me` returns the non-sensitive principal, effective roles/permissions/scopes and onboarding state. `POST /api/v2/session/logout` ends the session. Account invitation/activation, password reset, password change and deactivation follow FDR-13: minimum 12 characters, maximum 72 UTF-8 bytes, BCrypt cost 12; single-use hashed invitation token (24 hours) and reset token (30 minutes); generic non-enumerating reset response; sessions revoked after reset, deactivation or permission change.
 
-The backend enforces authentication, effective role, permission, resource scope, relationship and state. Frontend visibility is not authorization. The Manager approver is a capability, not a confirmed role; endpoints requiring `REPLACEMENT.APPROVE`, `REPLACEMENT.REJECT` or `REPLACEMENT.SELECT_CANDIDATE` remain conditional on OD-01/OD-16 and must fail closed without an active scoped authority grant.
+API v3.0 keeps the prior employee contract under `/api/v1` and places the approved breaking employee contract under `/api/v2`. The current frontend targets `/api/v2`. The `/api/v1` employee request/response shape and path remain documented for compatibility; `/api/v1/session/csrf` is additive. Team-name limits are versioned: `/api/v1/teams` preserves its prior 160-character creation contract; `/api/v2/teams` enforces PO-10’s 120-character limit. The v1 contract has no team update operation. This contract does not assert that a backend runtime has implemented either version.
+
+CSRF bootstrap uses unauthenticated `GET /api/v2/session/csrf`, which creates/materializes the session-backed token and returns `{ "csrfToken": "…" }` with `Cache-Control: no-store`; the browser retains the HttpOnly `JSESSIONID` cookie and sends the token in `X-CSRF-TOKEN` for every POST/PUT/PATCH/DELETE, including login, activation, password-reset request and password reset. Public auth routes are unauthenticated but not CSRF-exempt. After login, logout, password reset, account activation, or any session rotation, bootstrap again and replace the in-memory token. Never store tokens in persistent browser storage or URLs.
+
+Team Lead history reads require `ORG.USER.READ` plus scope: OWN (only own assignment rows), assigned-TEAM (teams where the caller has effective Team Lead responsibility), or ORG (organization-wide). Admin is expected to receive ORG scope, Team Lead assigned-TEAM scope, Member OWN scope, and auditors/operators only explicitly provisioned scopes; roles do not grant permission by themselves. Team Lead mutations require ADMIN plus `ORG.TEAM_LEAD.MANAGE` and ORG scope. Appointment and atomic replacement use the team collection ETag returned by the history GET; termination and history correction use the assignment row ETag/version. New writes record the authenticated actor; legacy historical `assignedByUserAccountId` can be null. Intervals are inclusive; overlaps are rejected; mutation, audit event and version increment are atomic. No user-entered reason is required for termination or correction. Role or membership changes must not silently invalidate an active/future Team Lead responsibility.
+
+The backend enforces authentication, effective role, permission, resource scope, relationship and state. Frontend visibility is not authorization. The replacement workflow uses one explicit scoped `REPLACEMENT.APPROVE` permission for candidate visibility, review, approval and rejection, subject to FDR-03 recusal and time-bounded grant rules. Application roles, permissions, resource scopes and delegated grants are resolved from trusted server facts. Resource-level authorization is required for organization, team, employee, membership, Team Lead and duty-history records; no title or membership implies authority. Real-account access is not release-ready until effective authorization and security validation are implemented.
+
+## 3.1 Scope and provisioning rules
+
+Permission and scope are separate checks. ADMIN receives organization scope for approved organization administration; TEAM_LEAD reads only assigned-team resources where granted `ORG.USER.READ`; MEMBER receives own-resource reads where granted; auditors/operators receive no access until a designated platform/organization owner provisions a grant through the controlled audited process. `ORG.TEAM_LEAD.MANAGE`, auditor/operator permissions, `ACCOUNT.INVITE`, and `ACCOUNT.STATUS.MANAGE` are not inferred from role names. The backend enforces permission and resource scope on every request. Frontend visibility is presentation only.
 
 ## 4. Standard envelopes, errors and validation
 
@@ -59,19 +71,21 @@ Success returns the schema stated for the endpoint. Empty success returns `204`.
 
 ## 5. Endpoint catalogue
 
-All endpoint schemas are authoritative in `openapi.yaml`. The active decision rules come from Decision Register v1.1 Part F. Authorization failures return 403, missing scoped resources 404, stale version/grant writes 409, and Jakarta validation or business-rule violations 422 unless an operation documents a narrower response.
+All endpoint paths in this catalogue are relative to `/api/v2` unless explicitly marked `/api/v1`. Endpoint schemas are authoritative in `openapi.yaml`. The active rules come from Decision Register v1.2 Parts F and G; historical decision provenance remains explicit. Authorization failures return 403, missing scoped resources 404, stale version/grant writes 409, and Jakarta validation or business-rule violations 422 unless an operation documents a narrower response.
 
 | ID | Method / path | Auth / authorization | Purpose, validation and side effects | Data mapping / source |
 |---|---|---|---|---|
-| API-AUTH-01 | POST `/session/login` | Public | Validate credentials; establish session; never return password. | user_account; NFR-SEC-02 |
+| API-AUTH-00 | GET `/session/csrf` | Public safe bootstrap | Create/materialize session CSRF token; return token no-store and establish `JSESSIONID`. Required before every unsafe request. | session / Spring Security CSRF repository; NFR-SEC-02 |
+| API-AUTH-01 | POST `/session/login` | Public + CSRF header | Validate credentials; establish session; never return password. | user_account; NFR-SEC-02 |
 | API-AUTH-02 | POST `/session/logout` | Session | End current session; 204. | identity/session adapter |
 | API-AUTH-03 | GET `/session/me` | Session | Return effective UI permissions/scopes and onboarding state. | user_account, role assignment, onboarding |
-| API-ORG-01 | GET/POST `/employees` | `ORG.USER.READ` / `ORG.USER.MANAGE` | Paginated scoped listing / create effective-dated employee with unique validated work email. | employee, user_account; FR-ORG |
-| API-ORG-02 | GET/PATCH `/employees/{employeeId}` | READ / MANAGE; scope checked | Read/update without erasing historic facts; PATCH uses `If-Match`. | employee; FR-ORG-02..03 |
-| API-ORG-03 | GET `/teams` | `ORG.USER.READ`, scoped | List visible teams only. Team membership alone grants no access. | team; FR-ORG-04 |
-| API-ORG-04 | POST `/teams`; GET/POST `/employees/{employeeId}/team-memberships` | `ORG.TEAM.MANAGE` / `ORG.MEMBERSHIP.MANAGE` | Maintain teams and effective-dated membership; preserve history; multiple-membership rules remain OD-05. | team, team_membership; FR-ORG |
+| API-ORG-01 | GET/POST `/employees` | `ORG.USER.READ` / `ORG.USER.MANAGE` | Paginated scoped listing with active-status filter only; create requires firstName, lastName, unique mandatory workEmail; displayName is derived. Eligibility writes use effective rotationEligibleFrom/To, independent of employment dates. | employee, user_account; PO-01..03, PO-11 |
+| API-ORG-02 | GET/PATCH `/employees/{employeeId}` | READ / MANAGE; resource scope checked | Read/update using firstName, lastName, mandatory unique workEmail and effective eligibility dates; displayName is derived. Update uses `If-Match` and cannot erase historic facts. | employee; PO-01..03, PO-12 |
+| API-ORG-03 | GET `/teams` | `ORG.USER.READ`, scoped | List visible teams only, paginated; team membership alone grants no access. | team; PO-07/12 |
+| API-ORG-04 | POST `/teams`; GET/POST `/employees/{employeeId}/team-memberships` | `ORG.TEAM.MANAGE` / `ORG.MEMBERSHIP.MANAGE` | Maintain teams and effective-dated membership; preserve history; one active membership per employee/date and one active Team Lead per team/date. Team create uses 160 characters in v1 and 120 in v2 (PO-10); FDR-07. | team, team_membership; FR-ORG |
+| API-ORG-08 | GET/POST `/teams/{teamId}/team-lead-assignments`; POST `/teams/{teamId}/team-lead-assignments/{assignmentId}/replacement`; POST `/teams/{teamId}/team-lead-assignments/{assignmentId}/terminate`; PATCH `/teams/{teamId}/team-lead-assignments/{assignmentId}` | `ORG.TEAM_LEAD.MANAGE`, explicit organization scope | List history with `ORG.USER.READ` and OWN/assigned-TEAM/ORG scopes. Mutations require ADMIN plus `ORG.TEAM_LEAD.MANAGE` and ORG scope. Appointment and separate atomic `replaceTeamLead` require the team collection ETag from the history GET; termination/correction require the assignment rowVersion/ETag. Intervals are inclusive, non-overlapping, and the assignee must hold TEAM_LEAD and team membership throughout. Require actor attribution for new writes, preserve legacy null actor rows, audit before/after facts, and never silently invalidate active/future responsibility on role/membership change. Termination/correction have no user-entered reason. | team_lead_assignment, role/membership history, audit_event; PO-04..06, FDR-07 |
 | API-ORG-05 | GET `/authorization/roles`; GET/POST `/employees/{employeeId}/role-assignments` | own/scoped visibility / `ORG.ROLE.MANAGE` | Expose visible role/permission catalogue and administer effective-dated application roles; does not grant Manager approval capability. | app_role, permission, user_role_assignment; Roles §§4–5 |
-| API-ORG-06 | POST `/employees/{employeeId}/invitations`; POST `/account-activations`; PUT `/employees/{employeeId}/account-status` | `ORG.USER.MANAGE` / public single-use activation | Invite, activate with initial password, deactivate/reactivate linked account; invitation is single-use 24h; status changes revoke sessions and are audited. | user_account, account_action_token, audit_event, notification_outbox; FDR-13 |
+| API-ORG-06 | POST `/employees/{employeeId}/invitations`; POST `/account-activations`; PUT `/employees/{employeeId}/account-status` | `ACCOUNT.INVITE` / public single-use activation / `ACCOUNT.STATUS.MANAGE` | Invite, activate with initial password, deactivate/reactivate linked account; invitation is single-use 24h; status changes revoke sessions and are audited. | user_account, account_action_token, audit_event, notification_outbox; FDR-13 |
 | API-ORG-07 | GET/POST `/authorization/approval-grants`; POST `/authorization/approval-grants/{grantId}/revoke` | `ORG.AUTHORITY.MANAGE` | List/create/revoke scoped, time-bounded `REPLACEMENT.APPROVE` grants; self-grant forbidden; 403 unauthorized, 409 stale grant, 422 invalid scope/time/reason. | approval_authority_grant, audit_event; FDR-03 |
 | API-AUTH-04 | POST `/session/password/change`; POST `/password-reset-requests`; POST `/password-resets` | authenticated self / public generic reset | Verify current password, issue generic reset response, consume single-use 30m token; revoke sessions as defined. 401 invalid current session; 422 invalid token/password; 429 rate limit. | user_account, account_action_token, session, notification_outbox; FDR-13 |
 | API-HOL-01 | GET/POST `/holidays` | `CALENDAR.READ` / `CALENDAR.MANAGE` | List or create holiday with explicit Primary >=1 and Standby >=0 counts, no defaults; combined count cannot exceed active rotation-eligible pool. New holiday requires staffing before generation; date-specific availability gaps surface during generation and block publication. | holiday, holiday_staffing_requirement; FDR-04 |
@@ -92,7 +106,7 @@ All endpoint schemas are authoritative in `openapi.yaml`. The active decision ru
 | API-REP-02 | GET `/replacement-requests/{requestId}/candidates` | active scoped `REPLACEMENT.APPROVE` | Evaluate current eligibility/availability; Standby first; alternatives/gap visible; conflicted participants excluded. | assignment, availability, approval grant; FDR-03 |
 | API-REP-03 | POST `/replacement-requests/{requestId}/decision` | active scoped `REPLACEMENT.APPROVE` | Approve selected eligible candidate or reject, transactionally revalidated; self-approval/participant conflict forbidden. If no eligible approver, remain pending and escalate with no assignment change. | request/decision/change/version/audit/outbox; FDR-03 |
 | API-STB-01 | POST `/standby-activations` | `STANDBY.ACTIVATE`; replacement approval still required for assignment transfer | Record the activation event; only approved assignment lineage changes current slot credit. No actual performance assertion. | standby_activation, assignment_change; FDR-01/03 |
-| API-DUT-01 | GET `/duty-history` | own/team/org + `DUTY.REPORT.READ` where required | Return effective published Primary assignment credits and separately labeled future/draft/Standby/replaced/cancelled dimensions. No completion/actual-performer data. | assignment, roster_version, activation; FDR-01 |
+| API-DUT-01 | GET `/duty-history` | `DUTY.REPORT.READ`; employee OWN, TL OWN+assigned TEAM, Admin ORG; auditor/operator explicit granted scope | Backend filters effective published Primary assignment credits and separately labeled future/draft/Standby/replaced/cancelled dimensions. No completion/actual-performer data. | assignment, roster_version, activation; PO-09, FDR-01 |
 | API-HO-01 | GET/POST `/handover-reports`; GET `/handover-reports/{handoverId}` | `HANDOVER.READ` / `HANDOVER.CREATE`, scoped | Create/list/detail bounded content; submitted record immutable; correction is new linked addendum via `supersedesHandoverReportId`; no assignment change or acknowledgment. | handover_report/item, user_account, employee; FDR-08 |
 | API-NOT-01 | GET `/notifications`; GET `/notifications/unread-count` | `NOTIFICATION.READ`, OWN | Paginated current-user notifications include type, title, rendered message, creation/read time and optional target; no delivery-provider control exposed. | notification_outbox, notification_delivery |
 | API-NOT-02 | POST `/notifications/{notificationId}/read` | OWN | Set per-recipient in-app read timestamp; 404 for non-visible ID. | notification_outbox.read_at_utc |
@@ -179,7 +193,7 @@ Approval is atomic; it writes decision, new effective revision/change, audit and
 
 ## 7. DTO and persistence boundary
 
-### 7.1 Examples for v2.1 additions
+### 7.1 Examples for v3.0 additions
 
 Create a scoped approval grant (caller has `ORG.AUTHORITY.MANAGE`; dates and identities are illustrative):
 
@@ -207,7 +221,7 @@ Request password recovery with a provider-neutral work address; response is iden
 
 All examples are illustrative. Secret/password/token values are intentionally not included. OpenAPI schemas are authoritative for writable fields and bounds.
 
-`openapi.yaml` defines all writable/read-only properties. DTOs never expose entities or system-controlled audit fields. Core mappings: `Employee`→employee/user_account; account tokens→account_action_token; `Holiday`→holiday/holiday_staffing_requirement; `Availability`→availability_record; `RosterPeriod/RosterVersion/Assignment/GenerationResult`→roster_period/version/slot/assignment/generation_*; `ReplacementRequest`→replacement_request/decision/change/approval_authority_grant; `StandbyActivation`→standby_activation; `Handover`→handover_report/item with supersedes lineage.
+`openapi.yaml` defines all writable/read-only properties. DTOs never expose entities or system-controlled audit fields. Core mappings: `Employee`→employee/user_account (writes require firstName, lastName, unique workEmail; displayName is derived); account tokens→account_action_token; `Holiday`→holiday/holiday_staffing_requirement; `Availability`→availability_record; `RosterPeriod/RosterVersion/Assignment/GenerationResult`→roster_period/version/slot/assignment/generation_*; `ReplacementRequest`→replacement_request/decision/change/approval_authority_grant; `StandbyActivation`→standby_activation; `Handover`→handover_report/item with supersedes lineage.
 
 Derived data (`staffingGap`, candidate eligibility, fairness explanation, duty dimensions) is read-only. Client input cannot set workload totals, audit actor/timestamps, assignment origin/status, approval grant, version lineage or notification delivery state.
 
@@ -229,11 +243,11 @@ Implement Spring MVC controllers as transport adapters; request DTO + Jakarta Va
 
 ## 10. Traceability and gaps
 
-### 10.1 Final authorized contract additions (v2.1)
+### 10.1 Final authorized contract additions (v3.0)
 
 The synchronized OpenAPI operations `changePassword`, `requestPasswordReset`, `resetPassword`, `inviteEmployeeAccount`, `activateAccount`, `setEmployeeAccountStatus`, `listApprovalGrants`, `createApprovalGrant`, `revokeApprovalGrant`, and `createRosterRevision` implement FDR-03, FDR-09/10 and FDR-13. They require validation, audit, authorization and error handling as specified in the OpenAPI operation descriptions. Revision creates a draft child version only; another authorized publisher must publish it. No `duty completion` or `handover acknowledgement` operation exists. Existing candidate discovery and empty-slot creation operations remain supported.
 
-The endpoint catalogue plus OpenAPI v2.1 define the contract. Document 08 §12.2 maps all 31 screens. Password, invitation, grant administration, and closed-period correction now have operations. Duty completion and handover acknowledgement are excluded; manual candidate lookup and empty-slot assignment are supported. Dashboard aggregates and free-text employee search are not required; availability impact is returned through applicable validation and replacement flows, not a separate API.
+The canonical OpenAPI v3.0 defines explicit `/api/v1` legacy operations and `/api/v2` current operations. `openapi.yaml` is the sole machine-readable contract. Document 08 §12.2 maps all 31 screens. Password, invitation, grant administration, and closed-period correction now have operations. Duty completion and handover acknowledgement are excluded; manual candidate lookup and empty-slot assignment are supported. Dashboard aggregates and free-text employee search are not required; availability impact is returned through applicable validation and replacement flows, not a separate API.
 
 ## 11. Open API decisions and blockers
 
@@ -259,4 +273,4 @@ The endpoint catalogue plus OpenAPI v2.1 define the contract. Document 08 §12.2
 
 ## 12. Validation and implementation status
 
-Contract v2.1 is finalized under reconciliation authority. All 31 frontend screen actions map to existing or newly added OpenAPI operationIds. YAML parsing and local reference/operationId validation are recorded in the final readiness report. No application server, database, browser, integration or end-to-end test was executed in this documentation exercise.
+Contract v3.0 is synchronized with the authorized Product Owner decisions in Decision Register v1.2 Part G and preserved FDR decisions in Part F. All 31 frontend screen actions map to existing or newly added OpenAPI operationIds. YAML parsing and local reference/operationId validation are recorded in the final readiness report. No application server, database, browser, integration or end-to-end test was executed in this documentation exercise.
