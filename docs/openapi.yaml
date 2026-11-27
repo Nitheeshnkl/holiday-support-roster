@@ -1,0 +1,542 @@
+openapi: 3.0.3
+info:
+  title: Holiday Support Roster Management API
+  version: 2.1.0
+  description: Shared contract for the Antigravity Vanilla-JS frontend and OpenAI Codex Spring Boot backend. Approval-required decisions are marked in endpoint descriptions.
+servers:
+  - url: '{baseUrl}/api/v1'
+    variables:
+      baseUrl:
+        default: https://{environment-host}
+        description: Environment-specific base URL; no production URL is approved.
+tags:
+  - name: Session
+  - name: Authorization
+  - name: Employees
+  - name: Holidays
+  - name: Availability
+  - name: Rosters
+  - name: Replacements
+  - name: Duty history
+  - name: Handover
+  - name: Notifications
+  - name: Help
+paths:
+  /session/login:
+    post:
+      tags: [Session]
+      operationId: login
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}}
+      responses: {'200': {description: Authenticated session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /session/logout:
+    post:
+      tags: [Session]
+      operationId: logout
+      responses: {'204': {description: Session ended}, '401': {$ref: '#/components/responses/Unauthorized'}}
+  /session/me:
+    get:
+      tags: [Session]
+      operationId: getCurrentSession
+      responses: {'200': {description: Current session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}, '401': {$ref: '#/components/responses/Unauthorized'}}
+  /session/password/change:
+    post:
+      tags: [Session]
+      operationId: changePassword
+      summary: Change the authenticated user's password
+      description: Requires current password and an active authenticated session. Passwords are 12-72 UTF-8 bytes and at least 12 characters; BCrypt cost 12. Rotates the session identifier and revokes other sessions.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordChangeInput'}}}}
+      responses: {'204': {description: Password changed}, '401': {$ref: '#/components/responses/Unauthorized'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /password-reset-requests:
+    post:
+      tags: [Session]
+      operationId: requestPasswordReset
+      security: []
+      description: Always returns the same response regardless of account existence. Sends a single-use hashed reset token by configured email; token expires after 30 minutes.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordResetRequestInput'}}}}
+      responses: {'202': {description: Request accepted}, '429': {description: Rate limited}}
+  /password-resets:
+    post:
+      tags: [Session]
+      operationId: resetPassword
+      security: []
+      description: Consumes a single-use reset token, changes password, and revokes all active sessions. Invalid or expired tokens return the same generic error.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordResetInput'}}}}
+      responses: {'204': {description: Password reset}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /employees/{employeeId}/invitations:
+    post:
+      tags: [Employees]
+      operationId: inviteEmployeeAccount
+      description: Requires ORG.USER.MANAGE. Creates or resends an employee-linked, single-use 24-hour activation invitation; only a token hash is persisted.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'202': {description: Invitation queued}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /account-activations:
+    post:
+      tags: [Session]
+      operationId: activateAccount
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountActivationInput'}}}}
+      responses: {'204': {description: Account activated and initial password set}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /employees/{employeeId}/account-status:
+    put:
+      tags: [Employees]
+      operationId: setEmployeeAccountStatus
+      description: Requires ORG.USER.MANAGE. Deactivation immediately revokes active sessions. Employee and audit history are retained.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountStatusInput'}}}}
+      responses: {'200': {description: Account status changed}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /authorization/approval-grants:
+    get:
+      tags: [Employees]
+      operationId: listApprovalGrants
+      description: Requires ORG.AUTHORITY.MANAGE or authorized scoped visibility. Returns active and historical scoped REPLACEMENT.APPROVE grants.
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Approval grants, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrantList'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      tags: [Employees]
+      operationId: createApprovalGrant
+      description: Requires ORG.AUTHORITY.MANAGE. Grantor cannot grant themselves authority. Grant must be scoped and time-bounded; no default role grants this permission.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrantInput'}}}}
+      responses: {'201': {description: Grant created, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalGrant'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /authorization/approval-grants/{grantId}/revoke:
+    post:
+      tags: [Employees]
+      operationId: revokeApprovalGrant
+      description: Requires ORG.AUTHORITY.MANAGE. Revocation is audited and takes effect immediately; active sessions for the affected account are revoked.
+      parameters: [{$ref: '#/components/parameters/GrantId'}, {$ref: '#/components/parameters/IfMatch'}]
+      responses: {'204': {description: Grant revoked}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /employees:
+    get:
+      tags: [Employees]
+      operationId: listEmployees
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {$ref: '#/components/parameters/Active'}]
+      responses: {'200': {description: Paginated employees, content: {application/json: {schema: {$ref: '#/components/schemas/EmployeePage'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      tags: [Employees]
+      operationId: createEmployee
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EmployeeInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Employee'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /employees/{employeeId}:
+    get:
+      tags: [Employees]
+      operationId: getEmployee
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}]
+      responses: {'200': {description: Employee, content: {application/json: {schema: {$ref: '#/components/schemas/Employee'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+    patch:
+      tags: [Employees]
+      operationId: updateEmployee
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EmployeeInput'}}}}
+      responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/Employee'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /teams:
+    get:
+      tags: [Employees]
+      operationId: listTeams
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Teams, content: {application/json: {schema: {$ref: '#/components/schemas/TeamList'}}}}}
+    post:
+      tags: [Employees]
+      operationId: createTeam
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Team'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /employees/{employeeId}/team-memberships:
+    get:
+      tags: [Employees]
+      operationId: listEmployeeTeamMemberships
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Effective-dated memberships, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembershipList'}}}}}
+    post:
+      tags: [Employees]
+      operationId: createEmployeeTeamMembership
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembershipInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/TeamMembership'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /authorization/roles:
+    get:
+      tags: [Employees]
+      operationId: listVisibleRoles
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Visible role and permission catalogue, content: {application/json: {schema: {$ref: '#/components/schemas/RoleList'}}}}}
+  /employees/{employeeId}/role-assignments:
+    get:
+      tags: [Employees]
+      operationId: listEmployeeRoleAssignments
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Effective-dated role assignments, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignmentList'}}}}}
+    post:
+      tags: [Employees]
+      operationId: createEmployeeRoleAssignment
+      description: Requires ORG.ROLE.MANAGE. Role/permission changes are audited and revoke all active sessions for the affected account.
+      parameters: [{$ref: '#/components/parameters/EmployeeId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignmentInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RoleAssignment'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /holidays:
+    get:
+      tags: [Holidays]
+      operationId: listHolidays
+      parameters: [{$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Holidays, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayList'}}}}}
+    post:
+      tags: [Holidays]
+      operationId: createHoliday
+      description: Requires CALENDAR.MANAGE. Primary count >= 1 and Standby count >= 0 are both explicit; no defaults. Combined counts may not exceed the active rotation-eligible employee pool. Availability infeasibility is reported by generation; publication remains blocked until resolved. New holiday requires staffing before generation.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Holiday'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /holidays/{holidayId}:
+    patch:
+      tags: [Holidays]
+      operationId: updateHoliday
+      description: Requires CALENDAR.MANAGE. Direct update is permitted only before a published roster references this holiday. After publication, date/staffing change or cancellation must be represented in a reasoned roster revision; stable holiday identity and prior history are retained.
+      parameters: [{$ref: '#/components/parameters/HolidayId'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HolidayInput'}}}}
+      responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/Holiday'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
+  /availability:
+    get:
+      tags: [Availability]
+      operationId: listAvailability
+      parameters: [{$ref: '#/components/parameters/EmployeeIdOptional'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Availability records, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityList'}}}}}
+    post:
+      tags: [Availability]
+      operationId: createAvailability
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityInput'}}}}
+      responses: {'201': {description: Recorded, content: {application/json: {schema: {$ref: '#/components/schemas/Availability'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /availability/{availabilityId}/withdraw:
+    post:
+      tags: [Availability]
+      operationId: withdrawAvailability
+      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}]
+      responses: {'204': {description: Withdrawn}, '409': {$ref: '#/components/responses/Conflict'}}
+  /availability/{availabilityId}:
+    patch:
+      tags: [Availability]
+      operationId: updateAvailability
+      description: Requires AVAILABILITY.MANAGE_OWN or explicit on-behalf grant. Change is effective immediately for future generation/draft validation; never edits a published assignment. If that assignment conflicts, user must submit a replacement request. Stale drafts are invalidated and current facts are revalidated at generation and publication.
+      parameters: [{$ref: '#/components/parameters/AvailabilityId'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityInput'}}}}
+      responses: {'200': {description: Availability updated, content: {application/json: {schema: {$ref: '#/components/schemas/Availability'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /roster-periods:
+    get:
+      tags: [Rosters]
+      operationId: listRosterPeriods
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Periods, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriodList'}}}}}
+    post:
+      tags: [Rosters]
+      operationId: createRosterPeriod
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriodInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/RosterPeriod'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /roster-periods/{periodId}/generate:
+    post:
+      tags: [Rosters]
+      operationId: generateRosterDraft
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: false, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationRequest'}}}}
+      responses: {'201': {description: Draft generated, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationResult'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /roster-periods/{periodId}/roster:
+    get:
+      tags: [Rosters]
+      operationId: getRoster
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/RosterStatus'}]
+      responses: {'200': {description: Roster and versions, content: {application/json: {schema: {$ref: '#/components/schemas/Roster'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /roster-periods/{periodId}/generation-runs:
+    get:
+      tags: [Rosters]
+      operationId: listGenerationRuns
+      parameters: [{$ref: '#/components/parameters/PeriodId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Generation metadata, explanations, and feasibility results, content: {application/json: {schema: {$ref: '#/components/schemas/GenerationRunList'}}}}}
+  /roster-versions/{versionId}/assignments/{assignmentId}:
+    patch:
+      tags: [Rosters]
+      operationId: updateDraftAssignment
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/AssignmentId'}, {$ref: '#/components/parameters/IfMatch'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentChangeInput'}}}}
+      responses: {'200': {description: Updated draft assignment, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /roster-versions/{versionId}/assignment-candidates:
+    get:
+      tags: [Rosters]
+      operationId: listDraftAssignmentCandidates
+      summary: List currently eligible candidates for a draft roster slot
+      description: Requires ROSTER.MANUAL_ASSIGN in organization scope. Returns candidates that pass current active-employment, rotation-eligibility, availability, slot-validity, and no-other-assignment-on-this-holiday checks. Results are point-in-time and do not reserve an employee; the assignment write revalidates. No fairness score is returned by candidate discovery; the user-selected candidate is revalidated, and generation uses the approved FDR-02 comparator.
+      parameters:
+        - {$ref: '#/components/parameters/VersionId'}
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - name: holidayId
+          in: query
+          required: true
+          schema: {type: integer, format: int64}
+        - name: slotType
+          in: query
+          required: true
+          schema: {type: string, enum: [PRIMARY, STANDBY]}
+        - name: slotNumber
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200': {description: Eligible and available employees for the requested slot, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentCandidateList'}, example: {items: [{employeeId: 73, displayName: Alex Morgan}], page: {number: 0, size: 25, totalElements: 1, totalPages: 1}}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /roster-versions/{versionId}/assignments:
+    post:
+      tags: [Rosters]
+      operationId: createDraftAssignment
+      summary: Assign an employee to an unfilled draft slot
+      description: Requires ROSTER.MANUAL_ASSIGN in organization scope. Creates a MANUAL assignment only for an existing unfilled slot in a DRAFT version. Revalidates active employment, rotation eligibility, availability, slot identity and one-assignment-per-employee-per-holiday constraints at commit time. Requires If-Match and a reason. Persists manual origin, actor, reason, time, and an audit event. Does not permit bypass of hard checks. Automatic generation applies the approved FDR-02 fairness comparator; no client fairness score is accepted.
+      parameters:
+        - {$ref: '#/components/parameters/VersionId'}
+        - {$ref: '#/components/parameters/IfMatch'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DraftAssignmentInput'}, example: {holidayId: 12, slotType: PRIMARY, slotNumber: 2, employeeId: 73, reason: Fill unassigned draft slot}}}}
+      responses:
+        '201': {description: Manual assignment created, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}, example: {id: 208, rosterVersionId: 41, holidayId: 12, slotType: PRIMARY, slotNumber: 2, employeeId: 73, origin: MANUAL, status: PROPOSED, reason: Fill unassigned draft slot}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /roster-versions/{versionId}/publish:
+    post:
+      tags: [Rosters]
+      operationId: publishRosterVersion
+      description: Requires ROSTER.PUBLISH in scope. Revalidates current eligibility, availability, explicit staffing and gaps atomically. For any revision, publisher must differ from the revision initiator. Publishes immutable snapshot and queues notifications after commit.
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'200': {description: Published version, content: {application/json: {schema: {$ref: '#/components/schemas/RosterVersion'}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /roster-versions/{versionId}/revisions:
+    post:
+      tags: [Rosters]
+      operationId: createRosterRevision
+      summary: Create a reasoned correction version from a published version
+      description: Requires ROSTER.REVISE in scope. Works for open or closed periods. Creates a draft child version; does not change effective published state. Preserve the prior version. Revision initiator cannot publish the new version; another actor with ROSTER.PUBLISH must validate and publish. Revalidates current availability, eligibility and staffing. Holiday date/staffing changes and cancellation after publication use this workflow; cancellation is represented by status, never deletion. Source published version ID is unique per idempotency key.
+      parameters: [{$ref: '#/components/parameters/VersionId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RosterRevisionInput'}}}}
+      responses: {'201': {description: Draft revision created, content: {application/json: {schema: {$ref: '#/components/schemas/RosterVersion'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /replacement-requests:
+    get:
+      tags: [Replacements]
+      operationId: listReplacementRequests
+      parameters: [{$ref: '#/components/parameters/ReplacementStatus'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Replacement requests, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequestList'}}}}}
+    post:
+      tags: [Replacements]
+      operationId: createReplacementRequest
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequestInput'}}}}
+      responses: {'201': {description: Submitted, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequest'}, example: {id: 501, requestCode: RQ-00501, originalAssignmentId: 101, requestedForEmployeeId: 73, requesterUserAccountId: 73, requesterDisplayName: Alex Morgan, holidayId: 12, holidayDate: '2026-12-25', slotType: PRIMARY, slotNumber: 1, requestReason: Unexpected unavailability, status: AWAITING_MANAGER_DECISION, suggestedStandbyAssignmentId: 102, selectedReplacementEmployeeId: null, submittedAtUtc: '2026-11-27T09:00:00Z', resolvedAtUtc: null, rowVersion: 0, staffingGap: false, decisions: []}}}}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /replacement-requests/{requestId}/candidates:
+    get:
+      tags: [Replacements]
+      operationId: listReplacementCandidates
+      description: Requires an active scoped REPLACEMENT.APPROVE grant. Returns eligible/available candidates with designated Standby first and a visible gap when none qualify. Requester, affected assignee or a proposed candidate cannot perform the approval decision; conflicts are enforced server-side. Read is point-in-time; decision revalidates.
+      parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Standby-first candidate list, content: {application/json: {schema: {$ref: '#/components/schemas/CandidateList'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/NotFound'}, '409': {$ref: '#/components/responses/Conflict'}}
+  /replacement-requests/{requestId}/decision:
+    post:
+      tags: [Replacements]
+      operationId: decideReplacement
+      description: Requires active scoped REPLACEMENT.APPROVE. Reject self-approval and any requester, affected assignee or selected-candidate conflict. Requires a reason and explicit decision. Approve only a current eligible/available candidate; revalidate grant, scope, recusal, availability and version atomically. If no approver exists, request remains pending and escalates; no assignment mutation occurs.
+      parameters: [{$ref: '#/components/parameters/RequestId'}, {$ref: '#/components/parameters/IfMatch'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementDecisionInput'}}}}
+      responses: {'200': {description: Terminal decision, content: {application/json: {schema: {$ref: '#/components/schemas/ReplacementRequest'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {$ref: '#/components/responses/Conflict'}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /standby-activations:
+    post:
+      tags: [Replacements]
+      operationId: activateStandby
+      description: Requires STANDBY.ACTIVATE and an already-approved replacement decision for the same Primary slot. Records activation only; does not change assignment state or assert actual performance. The approved replacement decision/assignment lineage is the authority for effective workload credit.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StandbyActivationInput'}}}}
+      responses: {'201': {description: Activation recorded, content: {application/json: {schema: {$ref: '#/components/schemas/StandbyActivation'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /duty-history:
+    get:
+      tags: [Duty history]
+      operationId: getDutyHistory
+      parameters: [{$ref: '#/components/parameters/EmployeeIdOptional'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}, {$ref: '#/components/parameters/DutyDimension'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Separately labelled duty dimensions, content: {application/json: {schema: {$ref: '#/components/schemas/DutyHistoryPage'}}}}}
+  /handover-reports:
+    get:
+      tags: [Handover]
+      operationId: listHandoverReports
+      parameters: [{$ref: '#/components/parameters/AssignmentIdOptional'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Visible handover reports, content: {application/json: {schema: {$ref: '#/components/schemas/HandoverList'}}}}}
+    post:
+      tags: [Handover]
+      operationId: createHandoverReport
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HandoverInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Handover'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /handover-reports/{handoverId}:
+    get:
+      tags: [Handover]
+      operationId: getHandoverReport
+      parameters: [{$ref: '#/components/parameters/HandoverId'}]
+      responses: {'200': {description: Visible handover and items, content: {application/json: {schema: {$ref: '#/components/schemas/Handover'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Current user's notifications, content: {application/json: {schema: {$ref: '#/components/schemas/NotificationList'}}}}}
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      parameters: [{$ref: '#/components/parameters/NotificationId'}]
+      responses: {'204': {description: Marked read}, '404': {$ref: '#/components/responses/NotFound'}}
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadNotificationCount
+      responses: {'200': {description: Current user's unread count, content: {application/json: {schema: {$ref: '#/components/schemas/UnreadCount'}}}}}
+  /onboarding/progress:
+    get:
+      tags: [Session]
+      operationId: getOnboardingProgress
+      responses: {'200': {description: Current user's resumable onboarding progress, content: {application/json: {schema: {$ref: '#/components/schemas/Onboarding'}}}}}
+    patch:
+      tags: [Session]
+      operationId: updateOnboardingProgress
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OnboardingInput'}}}}
+      responses: {'200': {description: Updated onboarding progress, content: {application/json: {schema: {$ref: '#/components/schemas/Onboarding'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /audit-events:
+    get:
+      tags: [Duty history]
+      operationId: listAuditEvents
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {$ref: '#/components/parameters/FromDate'}, {$ref: '#/components/parameters/ToDate'}]
+      responses: {'200': {description: Authorized audit records, content: {application/json: {schema: {$ref: '#/components/schemas/AuditEventPage'}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+  /help/articles:
+    get:
+      tags: [Help]
+      operationId: listHelpArticles
+      parameters: [{$ref: '#/components/parameters/Search'}, {$ref: '#/components/parameters/CategoryId'}, {$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {description: Published visible help, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleList'}}}}}
+    post:
+      tags: [Help]
+      operationId: createHelpArticle
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleInput'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+  /help/articles/{articleId}:
+    get:
+      tags: [Help]
+      operationId: getHelpArticle
+      parameters: [{$ref: '#/components/parameters/ArticleId'}]
+      responses: {'200': {description: Role-visible article, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+    patch:
+      tags: [Help]
+      operationId: updateHelpArticle
+      parameters: [{$ref: '#/components/parameters/ArticleId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticleInput'}}}}
+      responses: {'200': {description: Updated, content: {application/json: {schema: {$ref: '#/components/schemas/HelpArticle'}}}}, '422': {$ref: '#/components/responses/ValidationError'}}
+components:
+  securitySchemes: {sessionCookie: {type: apiKey, in: cookie, name: JSESSIONID, description: HttpOnly Spring Security session cookie; CSRF token required for state-changing browser requests.}}
+  parameters:
+    GrantId: {name: grantId, in: path, required: true, schema: {type: integer, format: int64}}
+    EmployeeId: {name: employeeId, in: path, required: true, schema: {type: integer, format: int64}}
+    EmployeeIdOptional: {name: employeeId, in: query, schema: {type: integer, format: int64}}
+    HolidayId: {name: holidayId, in: path, required: true, schema: {type: integer, format: int64}}
+    AvailabilityId: {name: availabilityId, in: path, required: true, schema: {type: integer, format: int64}}
+    PeriodId: {name: periodId, in: path, required: true, schema: {type: integer, format: int64}}
+    VersionId: {name: versionId, in: path, required: true, schema: {type: integer, format: int64}}
+    AssignmentId: {name: assignmentId, in: path, required: true, schema: {type: integer, format: int64}}
+    AssignmentIdOptional: {name: assignmentId, in: query, schema: {type: integer, format: int64}}
+    RequestId: {name: requestId, in: path, required: true, schema: {type: integer, format: int64}}
+    HandoverId: {name: handoverId, in: path, required: true, schema: {type: integer, format: int64}}
+    NotificationId: {name: notificationId, in: path, required: true, schema: {type: integer, format: int64}}
+    ArticleId: {name: articleId, in: path, required: true, schema: {type: integer, format: int64}}
+    CategoryId: {name: categoryId, in: query, schema: {type: integer, format: int64}}
+    Page: {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+    PageSize: {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+    Active: {name: active, in: query, schema: {type: boolean}}
+    FromDate: {name: fromDate, in: query, schema: {type: string, format: date}}
+    ToDate: {name: toDate, in: query, schema: {type: string, format: date}}
+    Search: {name: q, in: query, schema: {type: string, maxLength: 200}}
+    RosterStatus: {name: status, in: query, schema: {type: string, enum: [DRAFT, REVIEWED, PUBLISHED]}}
+    ReplacementStatus: {name: status, in: query, schema: {type: string, enum: [SUBMITTED, AWAITING_MANAGER_DECISION, APPROVED, REJECTED, UNRESOLVED_STAFFING_GAP, CANCELLED]}}
+    DutyDimension: {name: dimension, in: query, required: true, schema: {type: string, enum: [EFFECTIVE_PUBLISHED_PRIMARY_CREDIT, FUTURE_PUBLISHED_PRIMARY, STANDBY_ASSIGNMENT, STANDBY_ACTIVATION, DRAFT_ASSIGNMENT, REPLACED_ASSIGNMENT, CANCELLED_ASSIGNMENT]}}
+    IfMatch: {name: If-Match, in: header, required: true, schema: {type: string}, description: Current row/version ETag; stale value returns 409.}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+  responses:
+    Unauthorized: {description: Authentication required, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Forbidden: {description: Authorization or scope denied, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotFound: {description: Resource not visible or not found, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Conflict: {description: State, idempotency, or optimistic-lock conflict, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    ValidationError: {description: Field or business validation failed, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  schemas:
+    LoginRequest: {type: object, required: [username, password], properties: {username: {type: string, maxLength: 255}, password: {type: string, format: password, writeOnly: true}}}
+    PasswordValue: {type: string, format: password, minLength: 12, maxLength: 72, description: At least 12 characters and no more than 72 UTF-8 bytes; BCrypt cost 12.}
+    PasswordChangeInput: {type: object, required: [currentPassword, newPassword], properties: {currentPassword: {type: string, format: password, writeOnly: true}, newPassword: {$ref: '#/components/schemas/PasswordValue'}}}
+    PasswordResetRequestInput: {type: object, required: [email], properties: {email: {type: string, format: email, maxLength: 254}}}
+    PasswordResetInput: {type: object, required: [token, newPassword], properties: {token: {type: string, writeOnly: true}, newPassword: {$ref: '#/components/schemas/PasswordValue'}}}
+    AccountActivationInput: {type: object, required: [token, newPassword], properties: {token: {type: string, writeOnly: true}, newPassword: {$ref: '#/components/schemas/PasswordValue'}}}
+    AccountStatusInput: {type: object, required: [active], properties: {active: {type: boolean}}}
+    ApprovalGrantInput: {type: object, required: [userAccountId, scopeType, validFrom, validUntil, reason], properties: {userAccountId: {type: integer, format: int64}, scopeType: {type: string, enum: [ORGANISATION, TEAM]}, scopeId: {type: integer, format: int64, nullable: true}, validFrom: {type: string, format: date}, validUntil: {type: string, format: date}, reason: {type: string, minLength: 1, maxLength: 1000}}}
+    ApprovalGrant: {type: object, properties: {id: {type: integer, format: int64, readOnly: true}, userAccountId: {type: integer, format: int64, readOnly: true}, permission: {type: string, enum: [REPLACEMENT.APPROVE], readOnly: true}, scopeType: {type: string, readOnly: true}, scopeId: {type: integer, format: int64, nullable: true, readOnly: true}, validFrom: {type: string, format: date, readOnly: true}, validUntil: {type: string, format: date, readOnly: true}, grantedByUserAccountId: {type: integer, format: int64, readOnly: true}, reason: {type: string, readOnly: true}, status: {type: string, enum: [ACTIVE, REVOKED, EXPIRED], readOnly: true}}}
+    ApprovalGrantList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/ApprovalGrant'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    RosterRevisionInput: {type: object, required: [reason, changes], properties: {reason: {type: string, minLength: 1, maxLength: 1000}, changes: {type: array, minItems: 1, items: {type: object, required: [holidayId, changeType], properties: {holidayId: {type: integer, format: int64}, changeType: {type: string, enum: [ASSIGNMENT, DATE, STAFFING, CANCELLATION]}, holidayDate: {type: string, format: date, nullable: true}, primaryCount: {type: integer, minimum: 1, nullable: true}, standbyCount: {type: integer, minimum: 0, nullable: true}, employeeId: {type: integer, format: int64, nullable: true}, slotType: {type: string, enum: [PRIMARY, STANDBY], nullable: true}, slotNumber: {type: integer, minimum: 1, nullable: true}, cancelled: {type: boolean, nullable: true}}}}}}
+    Session: {type: object, required: [user, csrfToken, onboarding], properties: {user: {$ref: '#/components/schemas/CurrentUser'}, csrfToken: {type: string, readOnly: true}, onboarding: {$ref: '#/components/schemas/Onboarding'}}}
+    CurrentUser: {type: object, properties: {id: {type: integer, format: int64}, employeeId: {type: integer, format: int64}, displayName: {type: string}, roles: {type: array, items: {type: string}}, permissions: {type: array, items: {type: string}}, scopes: {type: array, items: {type: string}}}}
+    EmployeeInput: {type: object, required: [employeeCode, displayName, workEmail, employmentStartDate], properties: {employeeCode: {type: string, maxLength: 40}, displayName: {type: string, maxLength: 160}, workEmail: {type: string, format: email, maxLength: 254}, employmentStartDate: {type: string, format: date}, employmentEndDate: {type: string, format: date, nullable: true}, rotationEligible: {type: boolean}}}
+    Employee: {allOf: [{$ref: '#/components/schemas/EmployeeInput'}, {type: object, required: [id, active, rowVersion], properties: {id: {type: integer, format: int64, readOnly: true}, active: {type: boolean, readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}}}]}
+    EmployeePage: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Employee'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    Team: {type: object, properties: {id: {type: integer, format: int64}, code: {type: string}, name: {type: string}, active: {type: boolean}}}
+    TeamInput: {type: object, required: [code, name], properties: {code: {type: string, maxLength: 40}, name: {type: string, maxLength: 160}}}
+    TeamList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Team'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    TeamMembershipInput: {type: object, required: [teamId, effectiveFrom], properties: {teamId: {type: integer, format: int64}, effectiveFrom: {type: string, format: date}, effectiveTo: {type: string, format: date, nullable: true}}}
+    TeamMembership: {allOf: [{$ref: '#/components/schemas/TeamMembershipInput'}, {type: object, properties: {id: {type: integer, format: int64}, employeeId: {type: integer, format: int64}, status: {type: string}}}]}
+    TeamMembershipList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/TeamMembership'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    Role: {type: object, properties: {id: {type: integer, format: int64}, code: {type: string}, name: {type: string}, permissions: {type: array, items: {type: string}}}}
+    RoleList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Role'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    RoleAssignmentInput: {type: object, required: [roleId, effectiveFrom], properties: {roleId: {type: integer, format: int64}, effectiveFrom: {type: string, format: date}, effectiveTo: {type: string, format: date, nullable: true}}}
+    RoleAssignment: {allOf: [{$ref: '#/components/schemas/RoleAssignmentInput'}, {type: object, properties: {id: {type: integer, format: int64}, employeeId: {type: integer, format: int64}}}]}
+    RoleAssignmentList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/RoleAssignment'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    HolidayInput: {type: object, required: [name, holidayDate, primaryCount, standbyCount], properties: {name: {type: string, maxLength: 160}, holidayDate: {type: string, format: date}, primaryCount: {type: integer, minimum: 1}, standbyCount: {type: integer, minimum: 0}, dutyWindowStart: {type: string, format: date-time, nullable: true}, dutyWindowEnd: {type: string, format: date-time, nullable: true}}}
+    Holiday: {allOf: [{$ref: '#/components/schemas/HolidayInput'}, {type: object, properties: {id: {type: integer, format: int64, readOnly: true}, status: {type: string, enum: [ACTIVE, INACTIVE, CANCELLED], readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}}}]}
+    HolidayList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Holiday'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    AvailabilityInput: {type: object, required: [availabilityType, startDate, endDate], properties: {availabilityType: {type: string, enum: [AVAILABLE, UNAVAILABLE]}, startDate: {type: string, format: date}, endDate: {type: string, format: date}, reasonCode: {type: string, maxLength: 40, nullable: true}, note: {type: string, maxLength: 500, nullable: true}}}
+    Availability: {allOf: [{$ref: '#/components/schemas/AvailabilityInput'}, {type: object, properties: {id: {type: integer, format: int64, readOnly: true}, employeeId: {type: integer, format: int64, readOnly: true}, status: {type: string, enum: [ACTIVE, CANCELLED, SUPERSEDED], readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}}}]}
+    AvailabilityList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Availability'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    RosterPeriodInput: {type: object, required: [periodCode, periodName, startDate, endDate], properties: {periodCode: {type: string, maxLength: 40}, periodName: {type: string, maxLength: 120}, startDate: {type: string, format: date}, endDate: {type: string, format: date}}}
+    RosterPeriod: {allOf: [{$ref: '#/components/schemas/RosterPeriodInput'}, {type: object, properties: {id: {type: integer, format: int64}, status: {type: string, enum: [OPEN, IN_REVIEW, PUBLISHED, CLOSED]}, rowVersion: {type: integer, format: int64}}}]}
+    RosterPeriodList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/RosterPeriod'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    GenerationRequest: {type: object, properties: {algorithmVersion: {type: string, maxLength: 40}, policyVersion: {type: string, maxLength: 40}}}
+    GenerationResult: {type: object, properties: {generationRunId: {type: integer, format: int64}, rosterVersion: {$ref: '#/components/schemas/RosterVersion'}, feasibilitySummary: {type: string}, unresolvedGaps: {type: array, items: {$ref: '#/components/schemas/StaffingGap'}}, explanations: {type: array, items: {type: string}}}}
+    GenerationRun: {type: object, properties: {id: {type: integer, format: int64}, rosterVersionId: {type: integer, format: int64}, runNumber: {type: integer}, algorithmVersion: {type: string}, policyVersion: {type: string}, status: {type: string, enum: [RUNNING, SUCCEEDED, FAILED, PARTIAL]}, feasibilitySummary: {type: string, nullable: true}}}
+    GenerationRunList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/GenerationRun'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    RosterVersion: {type: object, properties: {id: {type: integer, format: int64}, versionNumber: {type: integer}, status: {type: string, enum: [DRAFT, REVIEWED, PUBLISHED, SUPERSEDED, CANCELLED]}, rowVersion: {type: integer, format: int64}, parentVersionId: {type: integer, format: int64, nullable: true}}}
+    Roster: {type: object, properties: {period: {$ref: '#/components/schemas/RosterPeriod'}, versions: {type: array, items: {$ref: '#/components/schemas/RosterVersion'}}, slots: {type: array, items: {$ref: '#/components/schemas/RosterSlot'}}, assignments: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}
+    RosterSlot: {type: object, required: [id, holidayId, holidayName, holidayDate, slotType, slotNumber], properties: {id: {type: integer, format: int64, readOnly: true}, holidayId: {type: integer, format: int64, readOnly: true}, holidayName: {type: string, readOnly: true}, holidayDate: {type: string, format: date, readOnly: true}, slotType: {type: string, enum: [PRIMARY, STANDBY], readOnly: true}, slotNumber: {type: integer, minimum: 1, readOnly: true}, assignmentId: {type: integer, format: int64, nullable: true, readOnly: true}}}
+    AssignmentChangeInput: {type: object, required: [employeeId, reason], properties: {employeeId: {type: integer, format: int64}, reason: {type: string, maxLength: 1000}}}
+    DraftAssignmentInput: {type: object, required: [holidayId, slotType, slotNumber, employeeId, reason], properties: {holidayId: {type: integer, format: int64}, slotType: {type: string, enum: [PRIMARY, STANDBY]}, slotNumber: {type: integer, minimum: 1}, employeeId: {type: integer, format: int64}, reason: {type: string, minLength: 1, maxLength: 1000}}}
+    AssignmentCandidate: {type: object, required: [employeeId, displayName], properties: {employeeId: {type: integer, format: int64, readOnly: true}, displayName: {type: string, readOnly: true}}}
+    AssignmentCandidateList: {type: object, required: [items, page], properties: {items: {type: array, items: {$ref: '#/components/schemas/AssignmentCandidate'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    Assignment: {type: object, properties: {id: {type: integer, format: int64}, rosterVersionId: {type: integer, format: int64}, holidayId: {type: integer, format: int64}, holidayName: {type: string, readOnly: true}, holidayDate: {type: string, format: date, readOnly: true}, slotType: {type: string, enum: [PRIMARY, STANDBY]}, slotNumber: {type: integer}, employeeId: {type: integer, format: int64}, employeeDisplayName: {type: string, readOnly: true}, origin: {type: string, enum: [AUTO, MANUAL, REPLACEMENT]}, status: {type: string, enum: [PROPOSED, PUBLISHED, CURRENT, REPLACED, CANCELLED]}, reason: {type: string, nullable: true}}}
+    ReplacementRequestInput: {type: object, required: [originalAssignmentId, reason], properties: {originalAssignmentId: {type: integer, format: int64}, reason: {type: string, minLength: 1, maxLength: 1000}}}
+    ReplacementDecisionInput: {type: object, required: [decision, reason], properties: {decision: {type: string, enum: [APPROVED, REJECTED]}, replacementEmployeeId: {type: integer, format: int64, nullable: true}, reason: {type: string, minLength: 1, maxLength: 1000}}}
+    ReplacementDecision: {type: object, required: [decision, approverUserAccountId, decisionReason, validationResult, rosterVersionIdAtDecision, decidedAtUtc], properties: {decision: {type: string, enum: [APPROVED, REJECTED], readOnly: true}, approverUserAccountId: {type: integer, format: int64, readOnly: true}, approverDisplayName: {type: string, nullable: true, readOnly: true}, selectedReplacementEmployeeId: {type: integer, format: int64, nullable: true, readOnly: true}, selectedReplacementDisplayName: {type: string, nullable: true, readOnly: true}, decisionReason: {type: string, readOnly: true}, validationResult: {type: string, readOnly: true}, rosterVersionIdAtDecision: {type: integer, format: int64, readOnly: true}, decidedAtUtc: {type: string, format: date-time, readOnly: true}}}
+    ReplacementRequest: {type: object, required: [id, requestCode, originalAssignmentId, requestedForEmployeeId, requestReason, status, submittedAtUtc, rowVersion, decisions], properties: {id: {type: integer, format: int64, readOnly: true}, requestCode: {type: string, readOnly: true}, originalAssignmentId: {type: integer, format: int64, readOnly: true}, requestedForEmployeeId: {type: integer, format: int64, readOnly: true}, requesterUserAccountId: {type: integer, format: int64, nullable: true, readOnly: true}, requesterDisplayName: {type: string, nullable: true, readOnly: true}, requestedForDisplayName: {type: string, nullable: true, readOnly: true}, holidayId: {type: integer, format: int64, readOnly: true}, holidayDate: {type: string, format: date, readOnly: true}, slotType: {type: string, enum: [PRIMARY, STANDBY], readOnly: true}, slotNumber: {type: integer, readOnly: true}, requestReason: {type: string, readOnly: true}, status: {type: string, enum: [SUBMITTED, AWAITING_MANAGER_DECISION, APPROVED, REJECTED, UNRESOLVED_STAFFING_GAP, CANCELLED], readOnly: true}, suggestedStandbyAssignmentId: {type: integer, format: int64, nullable: true, readOnly: true}, selectedReplacementEmployeeId: {type: integer, format: int64, nullable: true, readOnly: true}, selectedReplacementDisplayName: {type: string, nullable: true, readOnly: true}, submittedAtUtc: {type: string, format: date-time, readOnly: true}, resolvedAtUtc: {type: string, format: date-time, nullable: true, readOnly: true}, rowVersion: {type: integer, format: int64, readOnly: true}, staffingGap: {type: boolean, readOnly: true}, decisions: {type: array, items: {$ref: '#/components/schemas/ReplacementDecision'}, readOnly: true}}}
+    ReplacementRequestList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/ReplacementRequest'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    CandidateList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Candidate'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    Candidate: {type: object, properties: {employeeId: {type: integer, format: int64}, displayName: {type: string}, suggestedStandby: {type: boolean}, eligible: {type: boolean}, available: {type: boolean}, exclusionReason: {type: string, nullable: true}}}
+    StandbyActivationInput: {type: object, required: [standbyAssignmentId, primaryAssignmentId, reason], properties: {standbyAssignmentId: {type: integer, format: int64}, primaryAssignmentId: {type: integer, format: int64}, reason: {type: string, maxLength: 1000}}}
+    StandbyActivation: {type: object, properties: {id: {type: integer, format: int64}, standbyAssignmentId: {type: integer, format: int64}, primaryAssignmentId: {type: integer, format: int64}, activatedForEmployeeId: {type: integer, format: int64}, activatedByUserAccountId: {type: integer, format: int64}, activatedAtUtc: {type: string, format: date-time}, status: {type: string, enum: [ACTIVATED, CANCELLED]}}}
+    DutyHistoryPage: {type: object, properties: {dimension: {type: string}, items: {type: array, items: {type: object}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    HandoverItemInput: {type: object, required: [itemType, title, content], properties: {itemType: {type: string, enum: [NOTE, CONTACT, REFERENCE, ACTION_REQUIRED]}, title: {type: string, maxLength: 160}, content: {type: string, maxLength: 4000}}}
+    HandoverInput: {type: object, required: [assignmentId, summary], properties: {assignmentId: {type: integer, format: int64}, supersedesHandoverReportId: {type: integer, format: int64, nullable: true, description: Set only when submitting a correction/addendum linked to a prior submitted handover.}, summary: {type: string, maxLength: 1000}, items: {type: array, items: {$ref: '#/components/schemas/HandoverItemInput'}}}}
+    HandoverItem: {allOf: [{$ref: '#/components/schemas/HandoverItemInput'}, {type: object, properties: {id: {type: integer, format: int64, readOnly: true}, createdAtUtc: {type: string, format: date-time, readOnly: true}}}]}
+    Handover: {type: object, properties: {id: {type: integer, format: int64}, assignmentId: {type: integer, format: int64}, supersedesHandoverReportId: {type: integer, format: int64, nullable: true, readOnly: true}, authoredByUserAccountId: {type: integer, format: int64}, authoredByDisplayName: {type: string, nullable: true, readOnly: true}, status: {type: string, enum: [DRAFT, SUBMITTED, ARCHIVED]}, summary: {type: string}, createdAtUtc: {type: string, format: date-time}, submittedAtUtc: {type: string, format: date-time, nullable: true}, items: {type: array, items: {$ref: '#/components/schemas/HandoverItem'}}}}
+    HandoverList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Handover'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    Notification: {type: object, required: [id, eventType, title, message, createdAtUtc], properties: {id: {type: integer, format: int64, readOnly: true}, eventType: {type: string, readOnly: true}, title: {type: string, readOnly: true}, message: {type: string, readOnly: true}, createdAtUtc: {type: string, format: date-time, readOnly: true}, readAtUtc: {type: string, format: date-time, nullable: true, readOnly: true}, targetType: {type: string, nullable: true, readOnly: true}, targetId: {type: integer, format: int64, nullable: true, readOnly: true}}}
+    NotificationList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/Notification'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    UnreadCount: {type: object, required: [count], properties: {count: {type: integer, minimum: 0}}}
+    OnboardingInput: {type: object, required: [walkthroughId, currentStep, status], properties: {walkthroughId: {type: integer, format: int64}, currentStep: {type: integer, minimum: 0}, status: {type: string, enum: [NOT_STARTED, IN_PROGRESS, COMPLETED, SKIPPED]}}}
+    WalkthroughStep: {type: object, properties: {stepNumber: {type: integer, readOnly: true}, title: {type: string, readOnly: true}, instructionText: {type: string, readOnly: true}, contextKey: {type: string, nullable: true, readOnly: true}}}
+    WalkthroughProgress: {type: object, properties: {walkthroughId: {type: integer, format: int64, readOnly: true}, roleCode: {type: string, readOnly: true}, title: {type: string, readOnly: true}, description: {type: string, nullable: true, readOnly: true}, versionNumber: {type: integer, readOnly: true}, currentStep: {type: integer, readOnly: true}, status: {type: string, enum: [NOT_STARTED, IN_PROGRESS, COMPLETED, SKIPPED], readOnly: true}, steps: {type: array, items: {$ref: '#/components/schemas/WalkthroughStep'}, readOnly: true}}}
+    Onboarding: {type: object, properties: {walkthroughs: {type: array, items: {$ref: '#/components/schemas/WalkthroughProgress'}}}}
+    AuditEvent: {type: object, properties: {id: {type: integer, format: int64}, actorUserAccountId: {type: integer, format: int64, nullable: true}, actorDisplayName: {type: string, nullable: true, readOnly: true}, actorType: {type: string, enum: [USER, SYSTEM]}, action: {type: string}, targetType: {type: string}, targetId: {type: integer, format: int64, nullable: true}, reason: {type: string, nullable: true}, beforeReference: {type: string, nullable: true}, afterReference: {type: string, nullable: true}, occurredAtUtc: {type: string, format: date-time}, correlationId: {type: string, nullable: true}}}
+    AuditEventPage: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/AuditEvent'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    HelpCategory: {type: object, properties: {id: {type: integer, format: int64}, code: {type: string}, name: {type: string}, displayOrder: {type: integer}}}
+    HelpArticleInput: {type: object, required: [title, categoryId, visibleRoleCodes, content], properties: {title: {type: string, maxLength: 200}, summary: {type: string, maxLength: 1000}, categoryId: {type: integer, format: int64}, visibleRoleCodes: {type: array, items: {type: string}}, content: {type: string, maxLength: 20000}, publicationStatus: {type: string, enum: [DRAFT, PUBLISHED, RETIRED]}}}
+    HelpArticle: {allOf: [{$ref: '#/components/schemas/HelpArticleInput'}, {type: object, properties: {id: {type: integer, format: int64}, categoryName: {type: string, readOnly: true}, versionNumber: {type: integer}, publishedAtUtc: {type: string, format: date-time, nullable: true}}}]}
+    HelpArticleList: {type: object, properties: {items: {type: array, items: {$ref: '#/components/schemas/HelpArticle'}}, categories: {type: array, items: {$ref: '#/components/schemas/HelpCategory'}}, page: {$ref: '#/components/schemas/PageMeta'}}}
+    StaffingGap: {type: object, properties: {holidayId: {type: integer, format: int64}, requiredPrimaryCount: {type: integer}, assignedPrimaryCount: {type: integer}, message: {type: string}}}
+    PageMeta: {type: object, properties: {number: {type: integer}, size: {type: integer}, totalElements: {type: integer, format: int64}, totalPages: {type: integer}}}
+    Error: {type: object, required: [code, message, timestamp], properties: {code: {type: string}, message: {type: string}, fieldErrors: {type: array, items: {type: object, properties: {field: {type: string}, code: {type: string}, message: {type: string}}}}, correlationId: {type: string, nullable: true}, timestamp: {type: string, format: date-time}}}
+security: [{sessionCookie: []}]
