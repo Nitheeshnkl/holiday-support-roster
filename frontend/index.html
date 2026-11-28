@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#151d38">
+  <meta name="description" content="Roster — holiday support scheduling and roster management">
+  <meta name="roster-api-base-url" content="">
+  <title>Roster | Holiday Support</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+  <div id="app" class="app-root">
+    <div class="startup-loading" role="status" aria-live="polite">
+      <p>Loading Holiday Support Roster…</p>
+    </div>
+  </div>
+
+  <!-- Centralized screen-reader live regions (kept outside modal inert scopes) -->
+  <div id="sr-status-polite" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+  <div id="sr-status-assertive" class="visually-hidden" aria-live="assertive" aria-atomic="true"></div>
+
+  <div id="toast-region" class="toast-region" role="region" aria-label="Status notifications"></div>
+
+  <noscript>
+    <main class="auth-layout">
+      <section class="panel" aria-labelledby="noscript-heading">
+        <h1 id="noscript-heading">JavaScript Required</h1>
+        <p>Holiday Support Roster requires JavaScript to authenticate and communicate securely with the application server.</p>
+      </section>
+    </main>
+  </noscript>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

@@ -5,12 +5,12 @@
 | Field | Value |
 |---|---|
 | Document ID | ROSTER-FE-008 |
-| Version | 2.1 |
+| Version | 3.0 |
 | Status | Finalized frontend integration specification under authorized reconciliation |
 | Created / updated | 27 November 2026 |
 | Owner | Frontend Architecture |
-| Governing business authority | `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.1 |
-| Governing API contract | `07_API_CONTRACT_AND_OPENAPI_SPECIFICATION.md` v2.1 and `openapi.yaml` 3.0.3, version 2.1.0 |
+| Governing business authority | `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.2 Parts F/G |
+| Governing API contract | `07_API_CONTRACT_AND_OPENAPI_SPECIFICATION.md` v3.0 and `openapi.yaml` 3.0.3, version 3.0.0 |
 | Intended implementer | Antigravity |
 
 ### Revision history
@@ -22,16 +22,18 @@
 | 1.2 | 27 Nov 2026 | Reconciled screen response fields and pagination to Document 07/OpenAPI v1.2; retained all unresolved policy and infrastructure conditions. |
 | 2.0 | 27 Nov 2026 | Finalized password/account, approval-grant, availability, workload, handover and closed-period revision behavior; mapped new v2.1 operations and removed completion/acknowledgement controls. |
 | 2.1 | 27 Nov 2026 | Aligned availability, holiday change history, grant validity, recusal, workload dimensions, and standby activation mappings to API/OpenAPI v2.1 and Database v1.4. |
+| 2.2 | 27 Nov 2026 | Synchronized employee name/eligibility/email fields, Team Lead lifecycle and permission, directory limitations, resource scopes and duty-history visibility with PO-01..12 and API/OpenAPI v2.2. |
+| 3.0 | 27 Nov 2026 | Moved breaking employee changes to `/api/v2`; specified session CSRF bootstrap, Team Lead appointment/replacement concurrency, scoped visibility and permission presentation; aligned the client to OpenAPI v3.0. |
 
 ### Related sources
 
-`ROSTER_PROJECT_MASTER_MEMORY.md` v1.8; `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.1 Part F; `Roster_Corrected_Final_PRD_v5.md` v5.4; `02_DOMAIN_AND_BUSINESS_RULES.md` v2.3; `03_ROLES_PERMISSIONS_AND_WORKFLOWS.md` v2.3; `04_SYSTEM_ARCHITECTURE.md` v2.4; `05_DATABASE_DESIGN_AND_DATA_DICTIONARY.md` v1.4; `06_BACKEND_TECHNICAL_SPECIFICATION.md` v1.4; Document 07 v2.1; `openapi.yaml` 2.1.0.
+`ROSTER_PROJECT_MASTER_MEMORY.md` v1.8; `ROSTER_CONFIRMED_BUSINESS_DECISIONS.md` v1.1 Part F; `Roster_Corrected_Final_PRD_v5.md` v5.4; `02_DOMAIN_AND_BUSINESS_RULES.md` v2.3; `03_ROLES_PERMISSIONS_AND_WORKFLOWS.md` v2.3; `04_SYSTEM_ARCHITECTURE.md` v2.4; `05_DATABASE_DESIGN_AND_DATA_DICTIONARY.md` v1.4; `06_BACKEND_TECHNICAL_SPECIFICATION.md` v1.4; Document 07 v3.0; `openapi.yaml` 3.0.0.
 
 ## 1. Purpose, authority, and implementation boundary
 
 This document specifies the product-specific browser experience and modular Vanilla JavaScript client. HTML5, CSS3, Vanilla JavaScript ES6+, and ES Modules are mandatory. Antigravity is the development tool, not a runtime framework. Do not add React, a router framework, TypeScript, a client build system, or a backend implementation.
 
-The browser communicates only with the Java/Spring Boot API. It does not access MySQL, determine authoritative fairness, grant permissions, or change an assignment before the backend confirms the operation. Document 07/OpenAPI v2.1 is the finalized contract boundary under the reconciliation authority; this specification maps to that contract and does not add API behavior.
+The browser communicates only with the Java/Spring Boot API. It does not access MySQL, determine authoritative fairness, grant permissions, or change an assignment before the backend confirms the operation. Document 07/OpenAPI v3.0 is the shared contract boundary under the recorded FDR and direct Product Owner decisions; this specification maps to that contract and does not add API behavior.
 
 No hosting, repository, deployment, base-URL injection mechanism, or handoff provider is selected here. SETUP-01 remains an external configuration dependency. The API base URL must be supplied by the eventual environment configuration, without embedding a production URL in source.
 
@@ -95,7 +97,7 @@ In API cells, grouped IDs are from Document 07, followed by exact OpenAPI operat
 
 | ID / screen | Roles, permission, entry | Components and displayed data | Actions, API, validation | Loading / empty / error / success; responsive and accessibility |
 |---|---|---|---|---|
-| AUTH-01 Login | Public; `/login` | Product identification, username/identifier and password fields, inline error region | Sign in → `API-AUTH-01 (login)`. Required fields; browser does not retain credential beyond submission or store it in local storage. | Pending button state; no empty state; generic credential failure without account enumeration; success fetches session and routes to authorized overview. Narrow single-column form; labels, autocomplete appropriate to credentials, password toggle must be keyboard accessible. |
+| AUTH-01 Login | Public; `/login` | Product identification, username/identifier and password fields, inline error region | Bootstrap CSRF with `getCsrfToken`, then sign in → `API-AUTH-01 (login)`. Public authentication POSTs still require `X-CSRF-TOKEN`; token stays in memory. | Pending button state; no empty state; generic credential failure without account enumeration; refresh CSRF after login/session rotation, then route to authorized overview. Narrow single-column form; labels, autocomplete appropriate to credentials, password toggle must be keyboard accessible. |
 | AUTH-02 Session expired / logout | Any session; 401 or profile menu | Session-expired explanation, sign-in link; logout confirmation only if needed for unsaved work | Logout → `API-AUTH-02 (logout)`; expiry redirects without logout call if session is already invalid. | Preserve safe return destination only in memory; no stale private data; responsive full-page notice; focus moves to heading. |
 | AUTH-03 Unauthorized / unavailable | Authenticated or deep link | No-access/unavailable explanation and safe navigation | Return to overview; no data action | 403/404-safe wording; no resource disclosure; focus heading. |
 | ONB-01 First-use walkthrough | Authenticated; onboarding state indicates incomplete | Role-specific steps, progress, current step and completion state | Resume, next/back, skip/restart where supported by progress contract → `API-ONB-01 (getOnboardingProgress, updateOnboardingProgress)` | Persistence errors retain current step and retry; completion confirmation; dismissible and never blocks urgent work. Mobile one-step layout; dialog focus management if modal. Step contents must derive only from confirmed role tasks. |
@@ -105,11 +107,11 @@ In API cells, grouped IDs are from Document 07, followed by exact OpenAPI operat
 
 | ID / screen | Roles, permission, entry | Components and displayed data | Actions, API, validation | States; responsive and accessibility |
 |---|---|---|---|---|
-| ORG-01 Employee directory | Admin/TL/authorized reader; `ORG.USER.READ` | Paginated list: employee identity, status, visible team/context fields returned by API | Search/filter only documented query parameters; open detail. `API-ORG-01 (listEmployees)` | Empty scoped directory; pagination controls expose current page; mobile row cards with labels. |
+| ORG-01 Employee directory | Admin/TL/authorized reader; `ORG.USER.READ` | Paginated list: employee identity, status, visible team/context fields returned by API | Filter only by active status and paginate; open detail. No name search. `API-ORG-01 (listEmployees)` | Empty scoped directory; pagination controls expose current page; mobile row cards with labels. |
 | ORG-02 Employee detail and duty history | Authorized scope; `ORG.USER.READ`, own detail as allowed | Profile fields and effective status; separate duty-history dimensions | Open edit/membership/role actions only with grant. `API-ORG-02 (getEmployee)`, `API-DUT-01 (getDutyHistory)` | No combined total; protected fields omitted; stale data refresh. Responsive sections; table labels. |
-| ORG-03 Create/edit employee | Admin with `ORG.USER.MANAGE` | Validated form using writable employee schema only | Create/update `API-ORG-01 (createEmployee)`, `API-ORG-02 (updateEmployee)`; `If-Match` for update; field errors from 422 | Dirty-form guard; 409 reload/compare; success returns detail. Required/date/status validations align to schema only. |
-| ORG-04 Teams and membership | Admin/authorized reader; team and membership permissions | Team list/detail, effective-dated memberships, visible employee references | `API-ORG-03 (listTeams, createTeam)`, `API-ORG-04 (listEmployeeTeamMemberships, createEmployeeTeamMembership)` | Membership reads are per employee. Do not assume multiple membership rules; OD-05 constraints surfaced as backend validation. Effective date range validation; mobile membership cards. |
-| ORG-05 Role assignment | Admin with `ORG.ROLE.MANAGE`; read scope for catalogue | Visible role catalogue, current effective assignments | Read/create assignment via `API-ORG-05 (listVisibleRoles, listEmployeeRoleAssignments, createEmployeeRoleAssignment)` | Explicit warning that role assignment does not grant Manager capability; no UI to create approval grants unless contract adds it. |
+| ORG-03 Create/edit employee | Admin with `ORG.USER.MANAGE` | Validated form: firstName, lastName, unique workEmail, employment dates, and effective rotationEligibleFrom/To; displayName is derived and read-only | Create/update `API-ORG-01 (createEmployee)`, `API-ORG-02 (updateEmployee)`; `If-Match` for update; field errors from 422 | Dirty-form guard; 409 reload/compare; success returns detail. Required/date/status validations align to schema only. |
+| ORG-04 Teams, membership and Team Lead history | `ORG.USER.READ` with assigned-TEAM or ORG scope; mutations require their exact organization permission and ORG scope | Scoped team list, effective-dated memberships, Team Lead assignment history, inclusive dates and versions | `API-ORG-03/04` team/membership operations; `API-ORG-08 (listTeamLeadAssignments, assignTeamLead, replaceTeamLead, terminateTeamLeadAssignment, correctTeamLeadAssignmentHistory)`. Appointment/replacement use collection ETag; termination/correction use assignment rowVersion. | Scope controls which teams/history are presented; backend remains authoritative. Team Lead writes require ADMIN plus `ORG.TEAM_LEAD.MANAGE`. Atomic replacement, no overlapping inclusive intervals, role and membership prerequisites. No reason field. Responsive history cards and accessible action forms. |
+| ORG-05 Role assignment | Admin with `ORG.ROLE.MANAGE`; read scope for catalogue | Visible role catalogue, current effective assignments | Read/create assignment via `API-ORG-05 (listVisibleRoles, listEmployeeRoleAssignments, createEmployeeRoleAssignment)` | Explicit warning that role assignment does not grant Manager capability; approval grant provisioning is shown only where the effective ORG.AUTHORITY.MANAGE permission is returned. |
 | CAL-01 Holiday calendar/list | `CALENDAR.READ` | Date-ordered holidays, status, explicit Primary count and optional Standby count where returned | Open details/create; `API-HOL-01 (listHolidays)` | Empty calendar offers create only with grant. Calendar has accessible list alternative; mobile list-first. |
 | CAL-02 Holiday detail/configuration | Reader; edit with `CALENDAR.MANAGE` and requirement permission | Holiday identity/date/status, staffing counts, relevant eligibility context only if API provides it | Create/update `API-HOL-01 (createHoliday)`, `API-HOL-02 (updateHoliday)`; counts are separate nonnegative values; update uses `If-Match` when row-versioned. | Staffing remains per-holiday, never hardcoded. OD-02/OD-11 conditions shown; 409 refresh. Form groups named Primary and Standby. |
 
@@ -133,7 +135,7 @@ In API cells, grouped IDs are from Document 07, followed by exact OpenAPI operat
 |---|---|---|---|---|
 | REP-01 Request unavailability/replacement | Assigned employee; `REPLACEMENT.REQUEST_OWN` | Current published assignment and required reason | `API-REP-01 (createReplacementRequest)`; confirmation states original assignment remains in effect pending decision | Success displays pending request, never claims replacement effective. No eligible candidate leads to visible staffing gap. |
 | REP-02 Request list/detail | Request participant or scoped `REPLACEMENT.READ` | Requester, original assignee/slot, status, reason, decision history, gap state | `API-REP-01 (listReplacementRequests)` | Empty scoped inbox; never leak unrelated requests; status text plus icon. |
-| REP-03 Candidate review and decision | Explicit active scoped `REPLACEMENT.APPROVE` capability; FDR-03 recusal applies | Standby first if eligible/available, then alternatives, validation, original assignment and history | Candidate list `API-REP-02 (listReplacementCandidates)`; decide `API-REP-03 (decideReplacement)` | Without grant or when conflicted, no decision controls. Backend revalidates. If no approver exists, pending escalation; no assignment change. |
+| REP-03 Candidate review and decision | Explicit active scoped single `REPLACEMENT.APPROVE` permission; FDR-03 recusal applies | Standby first if eligible/available, then alternatives, validation, original assignment and history | Candidate list `API-REP-02 (listReplacementCandidates)`; decide `API-REP-03 (decideReplacement)` | Without grant or when conflicted, no decision controls. Backend revalidates. If no approver exists, pending escalation; no assignment change. |
 | STB-01 Standby and activation | Roster reader; activation requires `STANDBY.ACTIVATE` | Standby designation/history, separate from Primary; approved replacement assignment lineage | Activation `API-STB-01 (activateStandby)` | Activation alone never creates workload credit or actual-performer fact. No completion action. |
 | DUT-01 Workload and assignment history | Own/team/org scope and `DUTY.REPORT.READ` where required | Seven separate dimensions: effective published Primary credit, future published Primary, Standby assignment, activation, draft, replaced and cancelled assignment | `API-DUT-01 (getDutyHistory)` one requested dimension per response; supported filters only | Never sum unlike dimensions or imply actual completion. Empty state names selected dimension. No completion mutation exists. |
 | HO-01 Handover list/detail/create | `HANDOVER.READ`/`HANDOVER.CREATE`; visibility scope | Operational summary/items, author/time, prior report link for addendum | `API-HO-01 (listHandoverReports, createHandoverReport, getHandoverReport)` | Informational only; submitted content immutable; corrections are linked addenda; no acknowledgment/receiver-signoff. Render text, not HTML. |
@@ -296,7 +298,7 @@ Route metadata declares required permission(s) and resource scope expectations. 
 
 ### 7.1 Client behavior
 
-`api/client.js` reads the environment-provided `{baseUrl}` and appends `/api/v1`; credentials use same-origin session cookies (`credentials: "same-origin"` for same-origin deployment). Mutations send the CSRF token from `getCurrentSession` according to Document 07 and use `If-Match` for row-versioned resources and `Idempotency-Key` for generation, publication, and replacement commands. Do not add JWT/OAuth/refresh-token logic. Do not put secrets in source.
+`api/client.js` reads the environment-provided `{baseUrl}` and appends `/api/v2`; `/api/v1` remains the documented legacy contract and is not used by this frontend; credentials use same-origin session cookies (`credentials: "same-origin"` for same-origin deployment). Before any unsafe request, the client obtains a session-backed token from `GET /api/v2/session/csrf`; it sends `X-CSRF-TOKEN` even for unauthenticated login/activation/reset requests. Refresh the token after login, logout, activation, reset and session rotation; keep it in memory only. Use authoritative ETags/rowVersion for `If-Match` and never fabricate a fallback version; appointment/replacement use the team history collection ETag, termination/correction use the assignment rowVersion. Use `Idempotency-Key` for generation, publication, and replacement commands. Do not add JWT/OAuth/refresh-token logic. Do not put secrets in source.
 
 Parse documented JSON envelopes and `204` responses. Normalize errors to `{status, code, message, fieldErrors, correlationId}`. Present safe user-facing messages; preserve correlation ID for support. Unknown response fields may be ignored; unknown failures receive a generic message. Server pagination is zero-based and page size is 1–100, default 25, using only documented filter/sort parameters. Refresh data on return to a stale detail view and after successful mutation.
 
@@ -304,8 +306,8 @@ Parse documented JSON envelopes and `204` responses. Normalize errors to `{statu
 
 | API ID group | OpenAPI operationIds | Screens |
 |---|---|---|
-| API-AUTH-01..03 | `login`, `logout`, `getCurrentSession` | AUTH-01..03, APP-01, shell |
-| API-ORG-01..05 | `listEmployees`, `createEmployee`, `getEmployee`, `updateEmployee`, `listTeams`, `createTeam`, `listEmployeeTeamMemberships`, `createEmployeeTeamMembership`, `listVisibleRoles`, `listEmployeeRoleAssignments`, `createEmployeeRoleAssignment` | ORG-01..05 |
+| API-AUTH-00..03 | `getCsrfToken`, `login`, `logout`, `getCurrentSession` | AUTH-01..03, APP-01, shell |
+| API-ORG-01..08 | employee and team operations; `listTeamLeadAssignments`, `assignTeamLead`, `replaceTeamLead`, `terminateTeamLeadAssignment`, `correctTeamLeadAssignmentHistory` | ORG-01..06 |
 | API-HOL-01..02 | `listHolidays`, `createHoliday`, `updateHoliday` | CAL-01..02 |
 | API-AVL-01..02 | `listAvailability`, `createAvailability`, `withdrawAvailability` | AVL-01..02 |
 | API-ROS-01..08 | `listRosterPeriods`, `createRosterPeriod`, `generateRosterDraft`, `getRoster`, `listGenerationRuns`, `updateDraftAssignment`, `publishRosterVersion`, `listDraftAssignmentCandidates`, `createDraftAssignment` | ROS-01..07 |
@@ -320,7 +322,7 @@ Parse documented JSON envelopes and `204` responses. Normalize errors to `{statu
 
 ### 7.3 Contract gaps and limits
 
-Document 07/OpenAPI v2.1 includes account lifecycle, scoped approval-grant, and published-version revision operations. Manual candidate lookup and empty-slot assignment are supported by API-ROS-07/08. Dashboard aggregate metrics and employee free-text search are not specified product capabilities. Do not render duty completion or handover acknowledgement controls; both are out of initial release. Manager approval controls require the explicit active grant and must be hidden/disabled for recused participants.
+Document 07/OpenAPI v3.0 includes account lifecycle, scoped approval-grant, published-version revision, and effective Team Lead history operations. Manual candidate lookup and empty-slot assignment are supported by API-ROS-07/08. Dashboard aggregate metrics and employee free-text search are not specified product capabilities. Do not render duty completion or handover acknowledgement controls; both are out of initial release. Replacement candidate visibility and all decisions require the single explicit active scoped `REPLACEMENT.APPROVE` permission; controls are hidden/disabled for recused participants. Duty history is own for Employee, own plus assigned team for Team Lead, organization-wide for Admin, and explicitly granted scope for auditor/operator; the backend filters each request. Unconfigured or unauthenticated accounts see no protected organization data.
 
 ## 8. UX workflows
 
@@ -434,7 +436,7 @@ The initial-release product-policy decisions are finalized in Register v1.1 Part
 
 ### 12.1 Coverage gaps
 
-Document 07/OpenAPI v2.1 covers manual candidate discovery, password/account lifecycle, grants, availability changes and closed-period revision. Only APP-01 aggregate metrics (not a specified requirement) and AVL-02 impact preview (not required) are partial. Duty completion and handover acknowledgment are excluded. No policy decision remains open.
+Document 07/OpenAPI v3.0 covers manual candidate discovery, password/account lifecycle, grants, availability changes and closed-period revision. Only APP-01 aggregate metrics (not a specified requirement) and AVL-02 impact preview (not required) are partial. Duty completion and handover acknowledgment are excluded. No policy decision remains open.
 
 ### 12.2 Screen/action reconciliation
 
@@ -472,7 +474,7 @@ Document 07/OpenAPI v2.1 covers manual candidate discovery, password/account lif
 | HELP-02 | Create/update help content | `createHelpArticle`, `updateHelpArticle` | FULLY SUPPORTED | None for category and role visibility fields | PRD FR-HELP; DB §§8.34–8.36 | Preserve Admin permission, content lifecycle, and safe rendering. |
 | AUD-01 | Read audit history/details | `listAuditEvents` | FULLY SUPPORTED | None for actor identity, reason, before/after references and event time | BD-031; PRD FR-AUD; DB §8.31 | Keep append-only history scoped and read-only. |
 
-**Classification totals (primary action per screen):** 28 FULLY SUPPORTED, 2 PARTIALLY SUPPORTED, 0 CONDITIONAL, 1 NOT REQUIRED, 0 MISSING API, 0 EXCLUDED. Partial rows are APP-01 (aggregate metrics not approved) and AVL-02 (impact preview is not required); AUTH-03 is NOT REQUIRED because it is a local safe-state view. Password, grant, replacement and revision functionality are covered by v2.1 operations. No screen adds completion, acknowledgment, mutual swap or other excluded feature.
+**Classification totals (primary action per screen):** 28 FULLY SUPPORTED, 2 PARTIALLY SUPPORTED, 0 CONDITIONAL, 1 NOT REQUIRED, 0 MISSING API, 0 EXCLUDED. Partial rows are APP-01 (aggregate metrics not approved) and AVL-02 (impact preview is not required); AUTH-03 is NOT REQUIRED because it is a local safe-state view. Password, grant, replacement and revision functionality are covered by API v3.0 operations. No screen adds completion, acknowledgment, mutual swap or other excluded feature.
 
 ## 13. Design-level validation
 
@@ -480,7 +482,7 @@ Document 07/OpenAPI v2.1 covers manual candidate discovery, password/account lif
 |---|---|
 | Approved frontend stack preserved | PASS — HTML/CSS/Vanilla JS ES modules only; no framework/build system is prescribed. |
 | Roles and permissions consistent | PASS — Admin, Team Lead, Member; explicit scoped approver capability with recusal and no implicit role grant. |
-| API operation IDs | PASS — operationIds map to OpenAPI 2.1.0; YAML and reference validation results are in final report. |
+| API operation IDs | PASS — operationIds map to OpenAPI 3.0.0; YAML and reference validation results are in final report. |
 | No unsupported endpoint introduced | PASS — new operations implement finalized account, scoped grant and published revision behavior; excluded flows have no endpoint. |
 | Draft/published distinction | PASS — persistent labels, confirmation, immutable history and no optimistic publication. |
 | Standby workload | PASS — backup/activation separate from effective published Primary credit; no completion data. |
@@ -493,4 +495,4 @@ Document 07/OpenAPI v2.1 covers manual candidate discovery, password/account lif
 
 ## 14. Final readiness status
 
-This document is finalized under the Product Owner's reconciliation authorization. The 31 screens have API mappings in §12.2; operation IDs resolve against OpenAPI v2.1. Account/password, approval-grant, and roster revision controls are included. Completion and handover acknowledgment controls are excluded. A screen row's conditional status is limited to unavailable customer setup or permissions, not an unresolved business policy. Dashboard aggregate metrics are not required and remain omitted. Frontend implementation may begin against this baseline; integrated execution still requires the external repository/handoff and environment configuration recorded in Document 11.
+This document is synchronized to the Product Owner's authorized decisions and recorded FDRs. Screen actions map in §12.2 to OpenAPI v3.0. Account/password, approval-grant, and roster revision controls are included. Completion and handover acknowledgment controls are excluded. A screen row's conditional status is limited to unavailable customer setup or permissions, not an unresolved business policy. Dashboard aggregate metrics are not required and remain omitted. Frontend implementation may begin against this baseline; integrated execution still requires the external repository/handoff and environment configuration recorded in Document 11.

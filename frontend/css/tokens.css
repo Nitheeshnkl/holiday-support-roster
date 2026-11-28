@@ -1,0 +1,89 @@
+:root {
+  color-scheme: light;
+
+  --color-ink: #1c2540;
+  --color-muted: #59647c;
+  --color-canvas: #f3f4f8;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f7f7fa;
+  --color-surface-hover: #f0f1f7;
+  --color-border: #e2e4ec;
+  --color-border-strong: #c9cddd;
+  --color-input-border: #8892a8;
+  --color-primary: #4b56c7;
+  --color-primary-hover: #3d47b2;
+  --color-primary-tint: #eeefff;
+  --color-primary-border: #c8ccf4;
+  --color-focus: #4b56c7;
+  --color-navy: #151d38;
+  --color-navy-soft: #222d4d;
+  --color-ivory: #faf8f2;
+  --color-lavender: #d9d8f7;
+  --color-electric: #4268e8;
+  --color-coral: #e67763;
+
+  --color-success: #156947;
+  --color-success-bg: #ecfdf5;
+  --color-success-border: #86efac;
+  --color-warning: #854d0e;
+  --color-warning-bg: #fefce8;
+  --color-warning-border: #fde047;
+  --color-danger: #a12d32;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fca5a5;
+  --color-info: #1d4ed8;
+  --color-info-bg: #eff6ff;
+  --color-info-border: #bfdbfe;
+  --color-draft-bg: #fffbeb;
+  --color-draft-surface: #fffdf5;
+  --color-draft-border: #d97706;
+  --color-draft-ink: #78350f;
+
+  --color-cal-primary-bg: #e8eefc;
+  --color-cal-primary-border: #9aabed;
+  --color-cal-standby-bg: #f0f1f5;
+  --color-cal-standby-border: #a9afc2;
+  --color-cal-holiday-bg: #eeefff;
+  --color-cal-holiday-border: #b3b5ed;
+  --color-cal-holiday-ink: #3730a3;
+  --color-cal-unavail-bg: #fff3ed;
+  --color-cal-unavail-border: #f3b59e;
+  --color-cal-unavail-ink: #913b20;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+
+  --radius-sm: 0.4rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-pill: 9999px;
+  --shadow-xs: 0 1px 2px rgb(21 29 56 / 6%);
+  --shadow-panel: 0 2px 8px rgb(21 29 56 / 4%);
+  --shadow-popover: 0 14px 34px rgb(21 29 56 / 14%), 0 3px 8px rgb(21 29 56 / 6%);
+  --shadow-overlay: 0 20px 48px rgb(21 29 56 / 18%), 0 5px 14px rgb(21 29 56 / 7%);
+
+  --z-sticky: 10;
+  --z-header: 30;
+  --z-drawer-backdrop: 40;
+  --z-drawer: 50;
+  --z-popover: 70;
+  --z-tour: 90;
+  --z-toast: 120;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 140ms;
+  --duration-normal: 220ms;
+  --font-sans: "Manrope", "Avenir Next", Avenir, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
+
+  --content-max: 88rem;
+  --sidebar-width: 16.5rem;
+  --header-height: 4rem;
+  --touch-min: 2.75rem;
+}
