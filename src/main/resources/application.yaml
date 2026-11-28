@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: holiday-support-roster
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_APP_USERNAME}
+    password: ${DB_APP_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: 30000
+  flyway:
+    # Provision separately from DB_APP_USERNAME; this account owns migration DDL privileges.
+    url: ${DB_MIGRATION_URL:${DB_URL}}
+    user: ${DB_MIGRATION_USERNAME}
+    password: ${DB_MIGRATION_PASSWORD}
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    clean-disabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  sql:
+    init:
+      mode: never
+
+server:
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:true}
+        same-site: lax
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+# Provision DB_APP_USERNAME separately from DB_MIGRATION_USERNAME; never use migration credentials at runtime.
+# Provision runtime DML by table outside Flyway: mutable organization/account/outbox rows require
+# SELECT/INSERT/UPDATE; append-only audit_event and notification_delivery require SELECT/INSERT only.
+# Do not grant runtime DELETE or schema/DDL privileges. DB_MIGRATION_USERNAME alone receives
+# the schema privileges required by Flyway.
+
+logging:
+  level:
+    org.springframework.security: INFO

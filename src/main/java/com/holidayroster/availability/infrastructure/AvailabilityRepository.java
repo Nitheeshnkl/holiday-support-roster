@@ -1,0 +1,3 @@
+package com.holidayroster.availability.infrastructure;
+import com.holidayroster.availability.domain.AvailabilityRecord; import jakarta.persistence.LockModeType; import java.time.LocalDate; import java.util.Optional; import org.springframework.data.domain.*; import org.springframework.data.jpa.repository.*;
+public interface AvailabilityRepository extends JpaRepository<AvailabilityRecord,Long>{ Page<AvailabilityRecord> findByEmployeeIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(Long id,LocalDate to,LocalDate from,Pageable p); @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select a from AvailabilityRecord a where a.id=:id") Optional<AvailabilityRecord> findByIdForUpdate(Long id); }

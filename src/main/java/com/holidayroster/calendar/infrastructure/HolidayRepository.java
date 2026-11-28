@@ -1,0 +1,3 @@
+package com.holidayroster.calendar.infrastructure;
+import com.holidayroster.calendar.domain.Holiday; import jakarta.persistence.LockModeType; import java.time.LocalDate; import java.util.Optional; import org.springframework.data.domain.*; import org.springframework.data.jpa.repository.*;
+public interface HolidayRepository extends JpaRepository<Holiday,Long>{ Page<Holiday> findByHolidayDateBetweenOrderByHolidayDate(LocalDate from,LocalDate to,Pageable pageable); boolean existsByHolidayDateAndIdNot(LocalDate date,Long id); @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select h from Holiday h where h.id=:id") Optional<Holiday> findByIdForUpdate(Long id); }
