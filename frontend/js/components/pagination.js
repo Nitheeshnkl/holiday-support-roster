@@ -17,8 +17,7 @@ export function createPagination({ page, onPageChange, onPageSizeChange } = {}) 
           el(
             'select',
             {
-              className: 'field__select',
-              style: 'inline-size: auto; min-block-size: 2.5rem; padding-block: 0.25rem;',
+              className: 'field__select pagination__select',
               'aria-label': 'Items per page',
               onChange: (e) => onPageSizeChange(Number(e.target.value)),
             },

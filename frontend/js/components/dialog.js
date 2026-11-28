@@ -53,7 +53,7 @@ export function confirmDialog({
         el(
           'div',
           { className: 'app-dialog__header' },
-          el('h1', { id: titleId, className: 'app-dialog__title' }, title)
+          el('h2', { id: titleId, className: 'app-dialog__title' }, title)
         ),
         message ? el('p', {}, message) : null,
         detailsNode || null,
@@ -115,7 +115,7 @@ export function openModal({
       el(
         'div',
         { className: 'app-dialog__header' },
-        el('h1', { id: titleId, className: 'app-dialog__title' }, title),
+        el('h2', { id: titleId, className: 'app-dialog__title' }, title),
         closeBtn
       ),
       bodyNode

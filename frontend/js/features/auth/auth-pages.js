@@ -5,6 +5,8 @@ import { createAlert, showToast } from '../../components/alert.js';
 import { confirmDialog } from '../../components/dialog.js';
 import * as sessionApi from '../../api/session.js';
 import { setSession, consumePendingReturnTo } from '../../state/session-store.js';
+import { getConfig } from '../../config.js';
+import { MOCK_DEMO_ACCOUNTS } from '../../api/mock-adapter.js';
 
 function renderAuthCard(container, { title, subtitle, children, navigate }) {
   clear(container);
@@ -70,7 +72,38 @@ export function renderLoginPage({ container, navigate, onAuthenticated, reasonMe
       { className: 'cluster' },
       el('a', { href: '/forgot-password', dataset: { route: 'true' } }, 'Forgot password?'),
       el('a', { href: '/activate', dataset: { route: 'true' } }, 'Activate invited account')
-    )
+    ),
+    getConfig().mockMode
+      ? el(
+          'details',
+          { className: 'panel stack-sm' },
+          el('summary', {}, 'Development mock accounts (local dev only)'),
+          el(
+            'ul',
+            { className: 'stack-sm' },
+            MOCK_DEMO_ACCOUNTS.map((acct) =>
+              el(
+                'li',
+                { className: 'cluster' },
+                el('span', { className: 'mono' }, acct.username),
+                el('span', { className: 'muted' }, acct.roleLabel),
+                el(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'btn btn-secondary btn-sm',
+                    onClick: () => {
+                      form.elements.namedItem('username').value = acct.username;
+                      form.elements.namedItem('password').value = acct.password;
+                    },
+                  },
+                  'Fill'
+                )
+              )
+            )
+          )
+        )
+      : null
   );
 
   renderAuthCard(container, {
@@ -393,10 +426,28 @@ export function renderActivateAccountPage({ container, navigate, query, signal }
   });
 }
 
-export function renderAccountSecurityPage({ container, session, signal }) {
+export function renderAccountSecurityPage({ container, session, onLogout, navigate, signal }) {
   const user = session.user;
   const feedbackBox = el('div', { className: 'stack-sm' });
   const submitBtn = el('button', { type: 'submit', className: 'btn btn-primary' }, 'Change password');
+  const signOutBtn = el(
+    'button',
+    {
+      type: 'button',
+      className: 'btn btn-secondary',
+      onClick: async () => {
+        if (typeof onLogout === 'function') {
+          await onLogout();
+        } else {
+          sessionApi.logout().catch(() => {});
+          clearSession();
+          if (typeof navigate === 'function') navigate('/login');
+          else window.location.href = '/login';
+        }
+      },
+    },
+    'Sign out'
+  );
 
   const form = el(
     'form',
@@ -477,7 +528,12 @@ export function renderAccountSecurityPage({ container, session, signal }) {
   );
 
   container.append(
-    el('div', { className: 'page-header' }, el('h1', { id: 'main-heading', tabindex: '-1' }, 'Account and security')),
+    el(
+      'div',
+      { className: 'page-header' },
+      el('h1', { id: 'main-heading', tabindex: '-1' }, 'Account and security'),
+      el('div', { className: 'page-header__actions' }, signOutBtn)
+    ),
     profilePanel,
     passwordPanel
   );

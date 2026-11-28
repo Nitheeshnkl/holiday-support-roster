@@ -1,4 +1,4 @@
-import { el, clear } from '../../utils/dom.js';
+import { el, clear, appendChildren } from '../../utils/dom.js';
 import { formatIsoDate } from '../../utils/date.js';
 import { bindFormValidation, applyServerFieldErrors, clearServerFieldErrors, validateDateRange } from '../../utils/validation.js';
 import { generateIdempotencyKey } from '../../utils/format.js';
@@ -217,6 +217,8 @@ export async function renderRosterPeriodsPage({ container, navigate, signal }) {
 export async function renderRosterOverviewPage({ container, params, query, session, navigate, signal }) {
   const periodId = params.periodId;
   let requestedStatus = query?.get('status') || '';
+  let slotTypeFilter = '';
+  let holidayDateFilter = '';
 
   const canGenerate = hasPermission('ROSTER.GENERATE');
   const canManualAssign = hasPermission('ROSTER.MANUAL_ASSIGN');
@@ -260,6 +262,31 @@ export async function renderRosterOverviewPage({ container, params, query, sessi
         ],
         onChange: (e) => {
           requestedStatus = e.target.value;
+          load();
+        },
+      });
+      const slotFilterField = createField({
+        name: 'slotType',
+        label: 'Slot type',
+        type: 'select',
+        value: slotTypeFilter,
+        options: [
+          { value: '', label: 'All slots (Primary & Standby)' },
+          { value: 'PRIMARY', label: 'Primary only' },
+          { value: 'STANDBY', label: 'Standby only' },
+        ],
+        onChange: (e) => {
+          slotTypeFilter = e.target.value;
+          load();
+        },
+      });
+      const dateFilterField = createField({
+        name: 'holidayDate',
+        label: 'Holiday date',
+        type: 'date',
+        value: holidayDateFilter,
+        onChange: (e) => {
+          holidayDateFilter = e.target.value;
           load();
         },
       });
@@ -334,7 +361,7 @@ export async function renderRosterOverviewPage({ container, params, query, sessi
           ),
           headerActions
         ),
-        el('div', { className: 'filter-bar' }, statusFilter)
+        el('div', { className: 'filter-bar' }, statusFilter, slotFilterField, dateFilterField)
       );
 
       if (isDraft) {
@@ -385,13 +412,19 @@ export async function renderRosterOverviewPage({ container, params, query, sessi
         )
       );
 
-      if (!slots.length) {
+      const filteredSlots = slots.filter((slot) => {
+        if (slotTypeFilter && slot.slotType !== slotTypeFilter) return false;
+        if (holidayDateFilter && slot.holidayDate !== holidayDateFilter) return false;
+        return true;
+      });
+
+      if (!filteredSlots.length) {
         slotSection.appendChild(
           createEmptyState({
             title: 'No slots or assignments in this view',
             description: canGenerate
-              ? 'Generate a draft roster or switch the status filter.'
-              : 'No roster data is visible for this period and status.',
+              ? 'Generate a draft roster or adjust your status, slot-type, or date filters.'
+              : 'No roster data is visible for this period and filter.',
             actionLabel: canGenerate ? 'Generate draft' : '',
             actionHref: canGenerate ? `/roster/${periodId}/generate` : '',
             onAction: canGenerate ? () => navigate(`/roster/${periodId}/generate`) : null,
@@ -520,7 +553,7 @@ export async function renderRosterOverviewPage({ container, params, query, sessi
                 },
               },
             ],
-            rows: slots,
+            rows: filteredSlots,
           })
         );
       }
@@ -807,7 +840,7 @@ export async function renderManualAssignPage({ container, params, query, navigat
             : null;
 
       const candidates = candidatesData?.items || [];
-      const errBox = el('div', { className: 'stack-sm' });
+      const errBox = el('div', { id: 'publish-error-box', className: 'stack-sm' });
       const submitBtn = el(
         'button',
         { type: 'submit', className: 'btn btn-primary', disabled: !candidates.length },
@@ -989,7 +1022,7 @@ export async function renderPublishRosterPage({ container, params, navigate, sig
         pickActiveVersion(roster, 'DRAFT');
       const slots = roster?.slots || [];
       const unfilled = slots.filter((s) => s.assignmentId == null);
-      const errBox = el('div', { className: 'stack-sm' });
+      const errBox = el('div', { id: 'publish-error-box', className: 'stack-sm' });
       const publishBtn = el('button', { type: 'button', className: 'btn btn-primary' }, 'Publish official roster');
 
       publishBtn.addEventListener('click', async () => {
@@ -1029,7 +1062,7 @@ export async function renderPublishRosterPage({ container, params, navigate, sig
         }
       });
 
-      host.append(
+      appendChildren(host, [
         el(
           'div',
           { className: 'page-header' },
@@ -1077,7 +1110,7 @@ export async function renderPublishRosterPage({ container, params, navigate, sig
             'Return to draft'
           )
         )
-      );
+      ]);
     } catch (err) {
       if (isAbortError(err)) return;
       clear(host);
@@ -1152,13 +1185,41 @@ export async function renderRosterHistoryPage({ container, params, navigate, sig
       );
 
       if (canRevise && publishedVersions.length > 0) {
-        const errBox = el('div', { className: 'stack-sm' });
+        const errBox = el('div', { id: 'publish-error-box', className: 'stack-sm' });
         const changeRows = [{ changeType: 'ASSIGNMENT' }];
         const changesContainer = el('div', { className: 'stack-sm' });
 
         const renderChanges = () => {
           clear(changesContainer);
           changeRows.forEach((row, idx) => {
+            const dateField = createField({ name: `holidayDate_${idx}`, label: 'New holiday date (for DATE)', type: 'date' });
+            const primaryField = createField({ name: `primaryCount_${idx}`, label: 'Primary count (for STAFFING, >=1)', type: 'number', min: 1 });
+            const standbyField = createField({ name: `standbyCount_${idx}`, label: 'Standby count (for STAFFING, >=0)', type: 'number', min: 0 });
+            const empField = createField({ name: `employeeId_${idx}`, label: 'Employee ID (for ASSIGNMENT)', type: 'number', min: 1 });
+            const slotTypeField = createField({
+              name: `slotType_${idx}`,
+              label: 'Slot type (for ASSIGNMENT)',
+              type: 'select',
+              options: [
+                { value: '', label: '—' },
+                { value: 'PRIMARY', label: 'PRIMARY' },
+                { value: 'STANDBY', label: 'STANDBY' },
+              ],
+            });
+            const slotNumField = createField({ name: `slotNumber_${idx}`, label: 'Slot number (for ASSIGNMENT)', type: 'number', min: 1 });
+            const cancelField = createField({ name: `cancelled_${idx}`, label: 'Mark holiday cancelled (for CANCELLATION)', type: 'checkbox' });
+
+            const syncVisibleFields = (type) => {
+              dateField.hidden = type !== 'DATE';
+              primaryField.hidden = type !== 'STAFFING';
+              standbyField.hidden = type !== 'STAFFING';
+              empField.hidden = type !== 'ASSIGNMENT';
+              slotTypeField.hidden = type !== 'ASSIGNMENT';
+              slotNumField.hidden = type !== 'ASSIGNMENT';
+              cancelField.hidden = type !== 'CANCELLATION';
+            };
+            syncVisibleFields(row.changeType);
+
             const fieldset = el(
               'fieldset',
               { className: 'field-group' },
@@ -1187,25 +1248,31 @@ export async function renderRosterHistoryPage({ container, params, navigate, sig
                   ],
                   onChange: (e) => {
                     changeRows[idx].changeType = e.target.value;
+                    syncVisibleFields(e.target.value);
                   },
                 }),
-                createField({ name: `holidayDate_${idx}`, label: 'New holiday date (for DATE)', type: 'date' }),
-                createField({ name: `primaryCount_${idx}`, label: 'Primary count (for STAFFING, >=1)', type: 'number', min: 1 }),
-                createField({ name: `standbyCount_${idx}`, label: 'Standby count (for STAFFING, >=0)', type: 'number', min: 0 }),
-                createField({ name: `employeeId_${idx}`, label: 'Employee ID (for ASSIGNMENT)', type: 'number', min: 1 }),
-                createField({
-                  name: `slotType_${idx}`,
-                  label: 'Slot type (for ASSIGNMENT)',
-                  type: 'select',
-                  options: [
-                    { value: '', label: '—' },
-                    { value: 'PRIMARY', label: 'PRIMARY' },
-                    { value: 'STANDBY', label: 'STANDBY' },
-                  ],
-                }),
-                createField({ name: `slotNumber_${idx}`, label: 'Slot number (for ASSIGNMENT)', type: 'number', min: 1 }),
-                createField({ name: `cancelled_${idx}`, label: 'Mark holiday cancelled (for CANCELLATION)', type: 'checkbox' })
-              )
+                dateField,
+                primaryField,
+                standbyField,
+                empField,
+                slotTypeField,
+                slotNumField,
+                cancelField
+              ),
+              changeRows.length > 1
+                ? el(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'btn btn-ghost btn-sm',
+                      onClick: () => {
+                        changeRows.splice(idx, 1);
+                        renderChanges();
+                      },
+                    },
+                    'Remove item'
+                  )
+                : null
             );
             changesContainer.appendChild(fieldset);
           });

@@ -17,6 +17,17 @@ export async function renderStandbyPage({ container, navigate, signal }) {
 
   const listHost = el('div', { className: 'stack' });
   const formHost = el('div', { className: 'stack' });
+  let filterFromDate = '';
+  let filterToDate = '';
+  let allStandbyRows = [];
+
+  const filterForm = el(
+    'form',
+    { className: 'filter-bar', method: 'GET' },
+    createField({ name: 'fromDate', label: 'Holiday from', type: 'date' }),
+    createField({ name: 'toDate', label: 'Holiday to', type: 'date' }),
+    el('button', { type: 'submit', className: 'btn btn-primary' }, 'Filter')
+  );
 
   container.append(
     el(
@@ -36,8 +47,11 @@ export async function renderStandbyPage({ container, navigate, signal }) {
         'Standby is a backup designation only and earns zero Primary workload credit. Recording a Standby activation requires an already-approved replacement decision for the same Primary slot and never creates a duty-completion or performance claim.',
     }),
     formHost,
+    canReadRoster ? el('search', {}, filterForm) : null,
     listHost
   );
+
+  let standbyFormRef = null;
 
   if (canActivate) {
     const errBox = el('div', { className: 'stack-sm' });
@@ -68,6 +82,7 @@ export async function renderStandbyPage({ container, navigate, signal }) {
       resultHost
     );
     formHost.appendChild(form);
+    standbyFormRef = form;
 
     bindFormValidation(form, {
       signal,
@@ -112,7 +127,81 @@ export async function renderStandbyPage({ container, navigate, signal }) {
     });
   }
 
+  const renderStandbyRows = () => {
+    clear(listHost);
+    const filtered = allStandbyRows.filter((row) => {
+      if (filterFromDate && String(row.holidayDate || '') < filterFromDate) return false;
+      if (filterToDate && String(row.holidayDate || '') > filterToDate) return false;
+      return true;
+    });
+
+    if (!filtered.length) {
+      listHost.appendChild(
+        createEmptyState({
+          title: 'No published Standby assignments found',
+          description: filterFromDate || filterToDate
+            ? 'No Standby designations match your selected date range.'
+            : 'Published Standby designations from recent periods appear here.',
+          actionLabel: 'Browse rosters',
+          actionHref: '/roster',
+          onAction: () => navigate('/roster'),
+        })
+      );
+      return;
+    }
+
+    const columns = [
+      { key: 'id', label: 'Assignment ID', isRowHeader: true, render: (a) => `#${a.id}` },
+      { key: 'holidayName', label: 'Holiday', render: (a) => `${a.holidayName || `Holiday #${a.holidayId}`} (${formatIsoDate(a.holidayDate)})` },
+      { key: 'employeeDisplayName', label: 'Standby person', render: (a) => a.employeeDisplayName || `Employee #${a.employeeId}` },
+      { key: 'slotNumber', label: 'Standby slot', render: (a) => `Standby #${a.slotNumber}` },
+      { key: 'status', label: 'Status', render: (a) => createStatusBadge(a.status) },
+    ];
+    if (canActivate) {
+      columns.push({
+        key: 'actions',
+        label: 'Actions',
+        render: (a) =>
+          el(
+            'button',
+            {
+              type: 'button',
+              className: 'btn btn-secondary btn-sm',
+              onClick: () => {
+                const input = standbyFormRef?.elements?.namedItem('standbyAssignmentId');
+                if (input) {
+                  input.value = String(a.id);
+                  input.focus();
+                }
+              },
+            },
+            'Use for activation'
+          ),
+      });
+    }
+
+    listHost.appendChild(
+      createDataTable({
+        caption: 'Published Standby designations',
+        columns,
+        rows: filtered,
+      })
+    );
+  };
+
   if (canReadRoster) {
+    filterForm.addEventListener(
+      'submit',
+      (e) => {
+        e.preventDefault();
+        const fd = new FormData(filterForm);
+        filterFromDate = String(fd.get('fromDate') || '');
+        filterToDate = String(fd.get('toDate') || '');
+        renderStandbyRows();
+      },
+      { signal }
+    );
+
     listHost.appendChild(createSkeleton({ rows: 4, label: 'Loading standby designations…' }));
     try {
       const periods = await rosterApi.listRosterPeriods({ page: 0, pageSize: 10, signal });
@@ -122,44 +211,19 @@ export async function renderStandbyPage({ container, navigate, signal }) {
         items.slice(0, 3).map((p) => rosterApi.getRoster(p.id, { status: 'PUBLISHED', signal }).catch(() => null))
       );
       if (signal?.aborted) return;
-      clear(listHost);
 
-      const standbyRows = [];
+      allStandbyRows = [];
       for (const roster of rosters) {
         if (!roster) continue;
         const assignList = Array.isArray(roster.assignments) ? roster.assignments : [];
         for (const a of assignList) {
           if (a.slotType === 'STANDBY') {
-            standbyRows.push({ ...a, periodName: roster.period?.periodName || `Period #${roster.period?.id}`, periodId: roster.period?.id });
+            allStandbyRows.push({ ...a, periodName: roster.period?.periodName || `Period #${roster.period?.id}`, periodId: roster.period?.id });
           }
         }
       }
 
-      if (!standbyRows.length) {
-        listHost.appendChild(
-          createEmptyState({
-            title: 'No published Standby assignments found',
-            description: 'Published Standby designations from recent periods appear here.',
-            actionLabel: 'Browse rosters',
-            actionHref: '/roster',
-            onAction: () => navigate('/roster'),
-          })
-        );
-      } else {
-        listHost.appendChild(
-          createDataTable({
-            caption: 'Published Standby designations',
-            columns: [
-              { key: 'id', label: 'Assignment ID', isRowHeader: true, render: (a) => `#${a.id}` },
-              { key: 'holidayName', label: 'Holiday', render: (a) => `${a.holidayName || `Holiday #${a.holidayId}`} (${formatIsoDate(a.holidayDate)})` },
-              { key: 'employeeDisplayName', label: 'Standby person', render: (a) => a.employeeDisplayName || `Employee #${a.employeeId}` },
-              { key: 'slotNumber', label: 'Standby slot', render: (a) => `Standby #${a.slotNumber}` },
-              { key: 'status', label: 'Status', render: (a) => createStatusBadge(a.status) },
-            ],
-            rows: standbyRows,
-          })
-        );
-      }
+      renderStandbyRows();
     } catch (err) {
       if (isAbortError(err)) return;
       clear(listHost);

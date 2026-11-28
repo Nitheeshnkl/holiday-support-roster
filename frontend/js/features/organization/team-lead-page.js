@@ -76,7 +76,22 @@ export async function renderTeamLeadAssignmentsPage({ container, params, signal 
       if (mode === 'replace') form.append(createField({ name: 'employeeId', label: 'Successor employee ID', type: 'number', required: true, min: 1 }));
       form.append(createField({ name: mode === 'terminate' ? 'effectiveTo' : 'effectiveFrom', label: mode === 'terminate' ? 'Inclusive final date' : 'Effective from', type: 'date', required: true, value: mode === 'correct' ? assignment.effectiveFrom : '' }));
       if (mode === 'correct') form.append(createField({ name: 'effectiveTo', label: 'Effective to (optional)', type: 'date', value: assignment.effectiveTo || '' }));
-      form.append(el('button', { className: 'btn btn-primary', type: 'submit' }, actionLabel));
+      form.append(
+        el(
+          'div',
+          { className: 'cluster' },
+          el('button', { className: 'btn btn-primary', type: 'submit' }, actionLabel),
+          el(
+            'button',
+            {
+              className: 'btn btn-secondary',
+              type: 'button',
+              onClick: () => notice.replaceChildren(),
+            },
+            'Cancel'
+          )
+        )
+      );
       notice.replaceChildren(form);
       bindFormValidation(form, { signal, onSubmitValid: async (fd) => {
         clearServerFieldErrors(form);

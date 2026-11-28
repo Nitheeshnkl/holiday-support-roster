@@ -19,6 +19,30 @@ export function compareIsoDates(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+export function getTodayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function addDaysIso(isoDate, delta) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+export function addMonthsIso(isoDate, delta) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+export function startOfWeekMonday(isoDate) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
 export function formatIsoDate(value) {
   if (!value) return '—';
   if (!isValidIsoDate(value)) return String(value);

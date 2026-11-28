@@ -29,6 +29,7 @@ import * as notificationsApi from '../js/api/notifications.js';
 import * as helpApi from '../js/api/help.js';
 import * as auditApi from '../js/api/audit.js';
 import * as onboardingApi from '../js/api/onboarding.js';
+import { resetMockState, configureMockBehavior, MOCK_DEMO_ACCOUNTS } from '../js/api/mock-adapter.js';
 import { resolveTeamLeadIfMatch } from '../js/features/organization/team-lead-page.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -428,4 +429,379 @@ test('CSS design tokens satisfy WCAG 2.2 AA contrast ratios', () => {
   // Non-text contrast >= 3:1 for focus ring and input borders
   assert.ok(contrastRatio(getToken('--color-focus'), surface) >= 3.0);
   assert.ok(contrastRatio(getToken('--color-input-border'), surface) >= 3.0);
+});
+
+function enableMockConfig(hostname = 'localhost') {
+  resetConfigCache();
+  globalThis.window = {
+    __ROSTER_CONFIG__: { mockMode: true },
+    location: { hostname },
+  };
+  globalThis.document = makeMockDoc('');
+}
+
+test('mockMode is opt-in, defaults to false, and is blocked on non-local hostnames', () => {
+  const realCfg = loadConfig(makeMockDoc('https://roster.internal.example'), { location: { hostname: 'roster.internal.example' } });
+  assert.equal(realCfg.mockMode, false);
+
+  assert.throws(
+    () =>
+      loadConfig(makeMockDoc(''), {
+        __ROSTER_CONFIG__: { mockMode: true },
+        location: { hostname: 'roster.company.com' },
+      }),
+    ConfigurationError
+  );
+
+  assert.throws(
+    () =>
+      loadConfig(makeMockDoc('https://api.company.com'), {
+        __ROSTER_CONFIG__: { mockMode: true },
+        location: { hostname: 'localhost' },
+      }),
+    ConfigurationError
+  );
+
+  const localMock = loadConfig(makeMockDoc(''), {
+    __ROSTER_CONFIG__: { mockMode: true },
+    location: { hostname: 'localhost' },
+  });
+  assert.equal(localMock.mockMode, true);
+  assert.equal(localMock.apiV2Base, '/api/v2');
+
+  const queryMock = loadConfig(makeMockDoc(''), {
+    location: { hostname: '127.0.0.1', search: '?mock=1' },
+  });
+  assert.equal(queryMock.mockMode, true);
+  assert.equal(queryMock.apiV2Base, '/api/v2');
+
+  assert.throws(
+    () =>
+      loadConfig(makeMockDoc(''), {
+        location: { hostname: 'roster.company.com', search: '?mock=1' },
+      }),
+    ConfigurationError
+  );
+});
+
+test('mock adapter supports full auth, organization, Team Lead concurrency, and approval grants', async () => {
+  const origFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('fetch should not be called in mockMode');
+  };
+
+  try {
+    enableMockConfig();
+    resetMockState();
+    clearSession();
+
+    const adminDemo = MOCK_DEMO_ACCOUNTS.find((a) => a.username === 'admin@company.local');
+    const session = await sessionApi.login({ username: adminDemo.username, password: adminDemo.password });
+    setSession(session);
+    assert.equal(fetchCalled, false);
+    assert.equal(session.user.roles.includes('ADMIN'), true);
+    assert.equal(hasPermission('ORG.TEAM_LEAD.MANAGE'), true);
+
+    // Employee create + update with If-Match + 409 on stale version
+    const createdEmp = await employeesApi.createEmployee({
+      employeeCode: 'EMP-999',
+      firstName: 'Sam',
+      lastName: 'Taylor',
+      workEmail: 'sam.taylor@company.local',
+      employmentStartDate: '2026-01-01',
+      employmentEndDate: null,
+      rotationEligibleFrom: '2026-02-01',
+      rotationEligibleTo: null,
+    });
+    assert.equal(createdEmp.displayName, 'Sam Taylor');
+    const fetchedEmp = await employeesApi.getEmployee(createdEmp.id);
+    const updatedEmp = await employeesApi.updateEmployee(
+      createdEmp.id,
+      { ...fetchedEmp, firstName: 'Samuel' },
+      resolveIfMatch(fetchedEmp)
+    );
+    assert.equal(updatedEmp.displayName, 'Samuel Taylor');
+    await assert.rejects(
+      () => employeesApi.updateEmployee(createdEmp.id, { ...updatedEmp, firstName: 'Stale' }, '"1"'),
+      (err) => err.status === 409 && err.code === 'CONCURRENT_MODIFICATION'
+    );
+
+    // Team Lead appointment, atomic replacement (collection ETag), and termination (rowVersion)
+    const tlHistory1 = await employeesApi.listTeamLeadAssignments(2);
+    const appointed = await employeesApi.assignTeamLead(
+      2,
+      { employeeId: 104, effectiveFrom: '2026-03-01' },
+      resolveIfMatch(tlHistory1)
+    );
+    assert.equal(appointed.employeeId, 104);
+
+    const tlHistory2 = await employeesApi.listTeamLeadAssignments(2);
+    const replaced = await employeesApi.replaceTeamLead(
+      2,
+      appointed.id,
+      { employeeId: 103, effectiveFrom: '2026-06-01' },
+      resolveIfMatch(tlHistory2)
+    );
+    assert.equal(replaced.employeeId, 103);
+
+    const tlHistory3 = await employeesApi.listTeamLeadAssignments(2);
+    const activeLead = tlHistory3.items.find((x) => x.id === replaced.id);
+    const terminated = await employeesApi.terminateTeamLeadAssignment(
+      2,
+      replaced.id,
+      { effectiveTo: '2026-12-31' },
+      resolveTeamLeadIfMatch('terminate', activeLead, tlHistory3)
+    );
+    assert.equal(terminated.effectiveTo, '2026-12-31');
+
+    // Self-grant prohibition
+    await assert.rejects(
+      () =>
+        employeesApi.createApprovalGrant({
+          userAccountId: session.user.id,
+          scopeType: 'ORGANISATION',
+          scopeId: null,
+          validFrom: '2026-01-01',
+          validUntil: '2026-12-31',
+          reason: 'Self grant test',
+        }),
+      (err) => err.status === 422 && err.code === 'SELF_GRANT_PROHIBITED'
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+    resetConfigCache();
+  }
+});
+
+test('mock adapter enforces holidays, availability overlap, roster revisions, replacements recusal, notifications, and audit', async () => {
+  enableMockConfig();
+  resetMockState();
+  clearSession();
+
+  try {
+    // Sign in as Member (Maya Patel, employeeId 103)
+    const memberCreds = MOCK_DEMO_ACCOUNTS.find((a) => a.username === 'member@company.local');
+    const memberSession = await sessionApi.login({ username: memberCreds.username, password: memberCreds.password });
+    setSession(memberSession);
+
+    // Availability overlap rejected (422), non-overlapping created & withdrawn
+    await assert.rejects(
+      () =>
+        availabilityApi.createAvailability({
+          availabilityType: 'UNAVAILABLE',
+          startDate: '2026-12-31',
+          endDate: '2027-01-01',
+          reasonCode: 'OVERLAP',
+        }),
+      (err) => err.status === 422 && err.code === 'OVERLAPPING_AVAILABILITY'
+    );
+    const avail = await availabilityApi.createAvailability({
+      availabilityType: 'AVAILABLE',
+      startDate: '2027-02-01',
+      endDate: '2027-02-02',
+      reasonCode: 'EXTRA',
+    });
+    const withdrawn = await availabilityApi.withdrawAvailability(avail.id, resolveIfMatch(avail));
+    assert.equal(withdrawn, null);
+    const availAfter = await availabilityApi.listAvailability();
+    assert.equal(availAfter.items.find((x) => x.id === avail.id)?.status, 'CANCELLED');
+
+    // Notifications unread count + mark read (204)
+    const unreadBefore = await notificationsApi.getUnreadNotificationCount();
+    assert.equal(unreadBefore.count, 1);
+    const notifList = await notificationsApi.listNotifications();
+    const markRes = await notificationsApi.markNotificationRead(notifList.items[0].id);
+    assert.equal(markRes, null);
+    const unreadAfter = await notificationsApi.getUnreadNotificationCount();
+    assert.equal(unreadAfter.count, 0);
+
+    // Handover report + addendum
+    const ho = await handoverApi.createHandoverReport({
+      assignmentId: 701,
+      summary: 'Initial notes',
+      items: [{ itemType: 'NOTE', title: 'Runbook', content: 'Verified' }],
+    });
+    const addendum = await handoverApi.createHandoverReport({
+      assignmentId: 701,
+      supersedesHandoverReportId: ho.id,
+      summary: 'Updated contact',
+      items: [{ itemType: 'CONTACT', title: 'Backup', content: 'Ext 400' }],
+    });
+    assert.equal(addendum.supersedesHandoverReportId, ho.id);
+
+    // Switch to Approver (Noah Brooks, userId 4, employeeId 104)
+    await sessionApi.logout();
+    const approverCreds = MOCK_DEMO_ACCOUNTS.find((a) => a.username === 'approver@company.local');
+    const approverSession = await sessionApi.login({ username: approverCreds.username, password: approverCreds.password });
+    setSession(approverSession);
+
+    const repList = await replacementsApi.listReplacementRequests();
+    const req = repList.items[0];
+    const candidates = await replacementsApi.listReplacementCandidates(req.id);
+    assert.equal(candidates.items[0].suggestedStandby, true);
+
+    // Approver cannot approve if selecting self (FDR-03 recusal)
+    await assert.rejects(
+      () =>
+        replacementsApi.decideReplacement(
+          req.id,
+          { decision: 'APPROVED', replacementEmployeeId: 104, reason: 'Self select' },
+          resolveIfMatch(req),
+          'rep-decide-self-1'
+        ),
+      (err) => err.status === 403 && err.code === 'RECUSAL_REQUIRED'
+    );
+
+    // Approving Liam Chen (102) succeeds and unlocks Standby activation
+    const decided = await replacementsApi.decideReplacement(
+      req.id,
+      { decision: 'APPROVED', replacementEmployeeId: 102, reason: 'Standby covers' },
+      resolveIfMatch(req),
+      'rep-decide-ok-1'
+    );
+    assert.equal(decided.status, 'APPROVED');
+
+    const act = await replacementsApi.activateStandby({
+      standbyAssignmentId: 702,
+      primaryAssignmentId: 701,
+      reason: 'Approved replacement activation',
+    });
+    assert.equal(act.status, 'ACTIVATED');
+    assert.equal(act.activatedForEmployeeId, 103);
+    assert.equal(act.activatedByUserAccountId, approverSession.user.id);
+
+    // Simulated server error hook
+    configureMockBehavior({ forcedError: { status: 503, code: 'SERVICE_UNAVAILABLE', message: 'Maintenance' } });
+    await assert.rejects(
+      () => helpApi.listHelpArticles(),
+      (err) => err.status === 503 && err.code === 'SERVICE_UNAVAILABLE'
+    );
+  } finally {
+    resetConfigCache();
+  }
+});
+
+test('mock adapter OpenAPI v3 parity: account-status PUT, 204s, collection ETag, schemas, scoping, candidates, and role walkthroughs', async () => {
+  enableMockConfig();
+  resetMockState();
+  clearSession();
+
+  try {
+    // 1. 204 on resetPassword & activateAccount + 72-byte password cap
+    const resetRes = await sessionApi.resetPassword({ token: 'tok-1', newPassword: 'valid-long-password' });
+    assert.equal(resetRes, null);
+    const actRes = await sessionApi.activateAccount({ token: 'tok-2', newPassword: 'valid-long-password' });
+    assert.equal(actRes, null);
+    await assert.rejects(
+      () => sessionApi.resetPassword({ token: 'tok-3', newPassword: '€'.repeat(25) }),
+      (err) => err.status === 422 && err.code === 'VALIDATION_ERROR'
+    );
+
+    // 2. Admin session checks: walkthrough (7 steps), notifications, PUT account-status, revoke 204, Team Lead collection ETag
+    const adminCreds = MOCK_DEMO_ACCOUNTS.find((a) => a.username === 'admin@company.local');
+    const adminSession = await sessionApi.login({ username: adminCreds.username, password: adminCreds.password });
+    setSession(adminSession);
+
+    assert.equal(adminSession.onboarding.walkthroughs[0].roleCode, 'ADMIN');
+    assert.equal(adminSession.onboarding.walkthroughs[0].steps.length, 7);
+    const adminUnread = await notificationsApi.getUnreadNotificationCount();
+    assert.ok(adminUnread.count >= 1);
+
+    const emp105 = await employeesApi.getEmployee(105);
+    const toggledOff = await employeesApi.setEmployeeAccountStatus(105, { active: false }, resolveIfMatch(emp105));
+    assert.equal(toggledOff.active, false);
+    const toggledOn = await employeesApi.setEmployeeAccountStatus(105, { active: true }, resolveIfMatch(toggledOff));
+    assert.equal(toggledOn.active, true);
+
+    const grants = await employeesApi.listApprovalGrants();
+    const grant = grants.items[0];
+    const revoked = await employeesApi.revokeApprovalGrant(grant.id, resolveIfMatch(grant));
+    assert.equal(revoked, null);
+
+    // assignTeamLead -> replaceTeamLead chained directly via returned collection ETag
+    const tlInit = await employeesApi.listTeamLeadAssignments(2);
+    const tl1 = await employeesApi.assignTeamLead(2, { employeeId: 104, effectiveFrom: '2026-03-01' }, resolveIfMatch(tlInit));
+    const tl2 = await employeesApi.replaceTeamLead(2, tl1.id, { employeeId: 103, effectiveFrom: '2026-06-01' }, resolveIfMatch(tl1));
+    assert.equal(tl2.employeeId, 103);
+    const tlAfter = await employeesApi.listTeamLeadAssignments(2);
+    assert.equal(resolveIfMatch(tl2), resolveIfMatch(tlAfter));
+
+    // 3. Roster schemas & draft candidate filtering
+    const rosterDraft = await rosterApi.getRoster(401, { status: 'DRAFT' });
+    assert.ok(rosterDraft.slots.every((s) => Number.isInteger(s.id) && s.id > 0));
+    assert.equal(rosterDraft.assignments[0].origin, 'AUTO');
+    assert.equal(rosterDraft.assignments[0].status, 'PROPOSED');
+
+    const runs = await rosterApi.listGenerationRuns(401);
+    assert.ok(['RUNNING', 'SUCCEEDED', 'FAILED', 'PARTIAL'].includes(runs.items[0].status));
+
+    // Holiday 201 (2026-12-25) in version 502 already has Maya (103) assigned -> excluded
+    const decCandidates = await rosterApi.listDraftAssignmentCandidates(502, {
+      holidayId: 201,
+      slotType: 'STANDBY',
+      slotNumber: 1,
+    });
+    assert.equal(decCandidates.items.some((c) => c.employeeId === 103), false);
+    assert.equal(decCandidates.items.some((c) => c.employeeId === 102), true);
+
+    // Holiday 202 (2027-01-01) has Maya (103) marked UNAVAILABLE 2026-12-31..2027-01-02 -> excluded
+    const janCandidates = await rosterApi.listDraftAssignmentCandidates(502, {
+      holidayId: 202,
+      slotType: 'PRIMARY',
+      slotNumber: 1,
+    });
+    assert.equal(janCandidates.items.some((c) => c.employeeId === 103), false);
+    assert.equal(janCandidates.items.some((c) => c.employeeId === 102), true);
+
+    // Invalid slotNumber rejected with 422
+    await assert.rejects(
+      () => rosterApi.listDraftAssignmentCandidates(502, { holidayId: 201, slotType: 'PRIMARY', slotNumber: 99 }),
+      (err) => err.status === 422
+    );
+
+    // Duty history date filters + FUTURE_PUBLISHED_PRIMARY
+    const futureAll = await historyApi.getDutyHistory({
+      dimension: 'FUTURE_PUBLISHED_PRIMARY',
+      fromDate: '2027-01-01',
+      toDate: '2027-01-31',
+    });
+    assert.equal(futureAll.items.length, 1);
+    assert.equal(futureAll.items[0].holidayDate, '2027-01-01');
+
+    // 4. TEAM_LEAD scope checks (TEAM:1) + walkthrough + notifications
+    await sessionApi.logout();
+    const leadCreds = MOCK_DEMO_ACCOUNTS.find((a) => a.username === 'lead@company.local');
+    const leadSession = await sessionApi.login({ username: leadCreds.username, password: leadCreds.password });
+    setSession(leadSession);
+    assert.equal(leadSession.onboarding.walkthroughs[0].roleCode, 'TEAM_LEAD');
+    assert.equal(leadSession.onboarding.walkthroughs[0].steps.length, 5);
+    const leadUnread = await notificationsApi.getUnreadNotificationCount();
+    assert.ok(leadUnread.count >= 1);
+
+    // Team Lead can read Core Ops member 103, gets 404 on Payments member 104
+    const teamMember = await employeesApi.getEmployee(103);
+    assert.equal(teamMember.id, 103);
+    await assert.rejects(() => employeesApi.getEmployee(104), (err) => err.status === 404);
+
+    // Team Lead duty-history includes TEAM:1 members (103) and excludes Payments (104)
+    const teamDuty = await historyApi.getDutyHistory({ dimension: 'EFFECTIVE_PUBLISHED_PRIMARY_CREDIT' });
+    assert.equal(teamDuty.items.some((a) => a.employeeId === 103), true);
+    assert.equal(teamDuty.items.some((a) => a.employeeId === 104), false);
+
+    // 5. MEMBER scope checks (OWN) + walkthrough (6 steps)
+    await sessionApi.logout();
+    const memberCreds = MOCK_DEMO_ACCOUNTS.find((a) => a.username === 'member@company.local');
+    const memberSession = await sessionApi.login({ username: memberCreds.username, password: memberCreds.password });
+    setSession(memberSession);
+    assert.equal(memberSession.onboarding.walkthroughs[0].roleCode, 'MEMBER');
+    assert.equal(memberSession.onboarding.walkthroughs[0].steps.length, 6);
+    await assert.rejects(() => employeesApi.getEmployee(102), (err) => err.status === 404);
+    const memberReqs = await replacementsApi.listReplacementRequests();
+    assert.ok(memberReqs.items.every((r) => r.requestedForEmployeeId === 103 || r.requesterUserAccountId === 3));
+  } finally {
+    clearSession();
+    resetConfigCache();
+  }
 });

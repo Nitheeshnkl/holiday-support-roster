@@ -27,6 +27,7 @@ import {
   renderStatusNoticePage,
 } from './features/auth/auth-pages.js';
 import { renderDashboardPage } from './features/dashboard/dashboard-page.js';
+import { renderCalendarPage } from './features/calendar/calendar-page.js';
 import { renderTeamLeadAssignmentsPage } from './features/organization/team-lead-page.js';
 import {
   renderApprovalGrantsPage,
@@ -79,48 +80,49 @@ const ROUTES = [
   { path: '/unavailable', allowAnySession: true, title: 'Unavailable', render: (ctx) => renderStatusNoticePage({ ...ctx, mode: 'unavailable', isAuthenticated: Boolean(ctx.session) }) },
 
   { path: '/', title: 'Overview', breadcrumbs: () => [{ label: 'Overview', path: '/' }], render: renderDashboardPage },
-  { path: '/account', title: 'Account & security', breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Account & security' }], render: renderAccountSecurityPage },
+  { path: '/calendar', title: 'Schedule Calendar', check: () => hasAnyPermission(['ROSTER.READ', 'CALENDAR.READ']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Schedule Calendar' }], render: renderCalendarPage },
+  { path: '/account', title: 'Account & Security', breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Account & Security' }], render: renderAccountSecurityPage },
 
-  { path: '/availability', title: 'My availability', check: () => hasAnyPermission(['AVAILABILITY.MANAGE_OWN', 'AVAILABILITY.READ', 'AVAILABILITY.MANAGE_ON_BEHALF']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Availability' }], render: renderAvailabilityPage },
-  { path: '/availability/:availabilityId', title: 'Availability detail', check: () => hasAnyPermission(['AVAILABILITY.MANAGE_OWN', 'AVAILABILITY.READ', 'AVAILABILITY.MANAGE_ON_BEHALF']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Availability', path: '/availability' }, { label: 'Record' }], render: renderAvailabilityDetailPage },
+  { path: '/availability', title: 'My availability', check: () => hasAnyPermission(['AVAILABILITY.MANAGE_OWN', 'AVAILABILITY.READ', 'AVAILABILITY.MANAGE_ON_BEHALF']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'My availability' }], render: renderAvailabilityPage },
+  { path: '/availability/:availabilityId', title: 'Availability detail', check: () => hasAnyPermission(['AVAILABILITY.MANAGE_OWN', 'AVAILABILITY.READ', 'AVAILABILITY.MANAGE_ON_BEHALF']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'My availability', path: '/availability' }, { label: 'Record' }], render: renderAvailabilityDetailPage },
 
   { path: '/holidays', title: 'Holidays', check: () => hasPermission('CALENDAR.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Holidays' }], render: renderHolidaysPage },
-  { path: '/holidays/new', title: 'Configure holiday', check: () => hasPermission('CALENDAR.MANAGE'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Holidays', path: '/holidays' }, { label: 'New' }], render: renderHolidayDetailPage },
+  { path: '/holidays/new', title: 'Add holiday', check: () => hasPermission('CALENDAR.MANAGE'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Holidays', path: '/holidays' }, { label: 'New' }], render: renderHolidayDetailPage },
   { path: '/holidays/:holidayId', title: 'Holiday detail', check: () => hasPermission('CALENDAR.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Holidays', path: '/holidays' }, { label: 'Detail' }], render: renderHolidayDetailPage },
 
-  { path: '/employees', title: 'Employees & teams', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM') || hasScope('OWN')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Employees' }], render: renderEmployeeListPage },
-  { path: '/employees/new', title: 'Create employee', check: () => hasPermission('ORG.USER.MANAGE') && hasScope('ORG'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Employees', path: '/employees' }, { label: 'Create' }], render: renderEmployeeFormPage },
-  { path: '/employees/:employeeId', title: 'Employee detail', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM') || hasScope('OWN')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Employees', path: '/employees' }, { label: 'Detail' }], render: renderEmployeeDetailPage },
-  { path: '/employees/:employeeId/edit', title: 'Edit employee', check: () => hasPermission('ORG.USER.MANAGE') && hasScope('ORG'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Employees', path: '/employees' }, { label: 'Edit' }], render: renderEmployeeFormPage },
-  { path: '/teams', title: 'Teams', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Employees', path: '/employees' }, { label: 'Teams' }], render: renderTeamsPage },
-  { path: '/teams/:teamId/team-leads', title: 'Team Lead assignments', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Teams', path: '/teams' }, { label: 'Team Lead assignments' }], render: renderTeamLeadAssignmentsPage },
-  { path: '/authority/grants', title: 'Approval grants', check: () => hasPermission('ORG.AUTHORITY.MANAGE') && hasScope('ORG'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Approval grants' }], render: renderApprovalGrantsPage },
+  { path: '/employees', title: 'People & Teams', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM') || hasScope('OWN')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'People & Teams' }], render: renderEmployeeListPage },
+  { path: '/employees/new', title: 'Add employee', check: () => hasPermission('ORG.USER.MANAGE') && hasScope('ORG'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'People & Teams', path: '/employees' }, { label: 'New' }], render: renderEmployeeFormPage },
+  { path: '/employees/:employeeId', title: 'Person details', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM') || hasScope('OWN')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'People & Teams', path: '/employees' }, { label: 'Details' }], render: renderEmployeeDetailPage },
+  { path: '/employees/:employeeId/edit', title: 'Edit person', check: () => hasPermission('ORG.USER.MANAGE') && hasScope('ORG'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'People & Teams', path: '/employees' }, { label: 'Edit' }], render: renderEmployeeFormPage },
+  { path: '/teams', title: 'Teams', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'People & Teams', path: '/employees' }, { label: 'Teams' }], render: renderTeamsPage },
+  { path: '/teams/:teamId/team-leads', title: 'Team Lead history', check: () => hasPermission('ORG.USER.READ') && (hasScope('ORG') || hasScope('TEAM')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Teams', path: '/teams' }, { label: 'Team Lead history' }], render: renderTeamLeadAssignmentsPage },
+  { path: '/authority/grants', title: 'Approval Authority', check: () => hasPermission('ORG.AUTHORITY.MANAGE') && hasScope('ORG'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Approval Authority' }], render: renderApprovalGrantsPage },
 
-  { path: '/roster', title: 'Roster periods', check: () => hasPermission('ROSTER.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Roster' }], render: renderRosterPeriodsPage },
-  { path: '/roster/:periodId', title: 'Roster overview', check: () => hasPermission('ROSTER.READ'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Roster', path: '/roster' }, { label: `Period #${p.periodId}` }], render: renderRosterOverviewPage },
-  { path: '/roster/:periodId/draft', title: 'Draft review', check: () => hasPermission('ROSTER.READ'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Roster', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Draft review' }], render: (ctx) => renderRosterOverviewPage({ ...ctx, query: new URLSearchParams({ status: 'DRAFT' }) }) },
-  { path: '/roster/:periodId/generate', title: 'Generate draft', check: () => hasPermission('ROSTER.GENERATE'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Roster', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Generate' }], render: renderGenerateRosterPage },
-  { path: '/roster/:periodId/history', title: 'Version history', check: () => hasPermission('ROSTER.READ'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Roster', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'History' }], render: renderRosterHistoryPage },
-  { path: '/roster/:periodId/versions/:versionId/assign', title: 'Manual assignment', check: () => hasPermission('ROSTER.MANUAL_ASSIGN'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Roster', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Manual assign' }], render: renderManualAssignPage },
-  { path: '/roster/:periodId/versions/:versionId/publish', title: 'Publish roster', check: () => hasPermission('ROSTER.PUBLISH'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Roster', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Publish' }], render: renderPublishRosterPage },
+  { path: '/roster', title: 'Schedules', check: () => hasPermission('ROSTER.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Schedules' }], render: renderRosterPeriodsPage },
+  { path: '/roster/:periodId', title: 'Schedule overview', check: () => hasPermission('ROSTER.READ'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Schedules', path: '/roster' }, { label: `Period #${p.periodId}` }], render: renderRosterOverviewPage },
+  { path: '/roster/:periodId/draft', title: 'Draft review', check: () => hasPermission('ROSTER.READ'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Schedules', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Draft review' }], render: (ctx) => renderRosterOverviewPage({ ...ctx, query: new URLSearchParams({ status: 'DRAFT' }) }) },
+  { path: '/roster/:periodId/generate', title: 'Generate draft', check: () => hasPermission('ROSTER.GENERATE'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Schedules', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Generate draft' }], render: renderGenerateRosterPage },
+  { path: '/roster/:periodId/history', title: 'Version history', check: () => hasPermission('ROSTER.READ'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Schedules', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'History' }], render: renderRosterHistoryPage },
+  { path: '/roster/:periodId/versions/:versionId/assign', title: 'Manual assignment', check: () => hasPermission('ROSTER.MANUAL_ASSIGN'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Schedules', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Assign slot' }], render: renderManualAssignPage },
+  { path: '/roster/:periodId/versions/:versionId/publish', title: 'Publish schedule', check: () => hasPermission('ROSTER.PUBLISH'), breadcrumbs: (p) => [{ label: 'Overview', path: '/' }, { label: 'Schedules', path: '/roster' }, { label: `Period #${p.periodId}`, path: `/roster/${p.periodId}` }, { label: 'Publish' }], render: renderPublishRosterPage },
 
-  { path: '/replacements', title: 'Replacement requests', check: () => hasAnyPermission(['REPLACEMENT.READ', 'REPLACEMENT.REQUEST_OWN', 'REPLACEMENT.APPROVE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Replacements' }], render: renderReplacementListPage },
-  { path: '/replacements/new', title: 'Report unavailability', check: () => hasPermission('REPLACEMENT.REQUEST_OWN'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Replacements', path: '/replacements' }, { label: 'Report unavailability' }], render: renderCreateReplacementPage },
-  { path: '/replacements/:requestId', title: 'Replacement detail', check: () => hasAnyPermission(['REPLACEMENT.READ', 'REPLACEMENT.REQUEST_OWN', 'REPLACEMENT.APPROVE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Replacements', path: '/replacements' }, { label: 'Detail' }], render: renderReplacementDetailPage },
+  { path: '/replacements', title: 'Requests', check: () => hasAnyPermission(['REPLACEMENT.READ', 'REPLACEMENT.REQUEST_OWN', 'REPLACEMENT.APPROVE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Requests' }], render: renderReplacementListPage },
+  { path: '/replacements/new', title: 'Report unavailability', check: () => hasPermission('REPLACEMENT.REQUEST_OWN'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Requests', path: '/replacements' }, { label: 'Report unavailability' }], render: renderCreateReplacementPage },
+  { path: '/replacements/:requestId', title: 'Request detail', check: () => hasAnyPermission(['REPLACEMENT.READ', 'REPLACEMENT.REQUEST_OWN', 'REPLACEMENT.APPROVE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Requests', path: '/replacements' }, { label: 'Detail' }], render: renderReplacementDetailPage },
 
-  { path: '/standby', title: 'Standby & activations', check: () => hasAnyPermission(['ROSTER.READ', 'STANDBY.ACTIVATE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Standby' }], render: renderStandbyPage },
-  { path: '/duty-history', title: 'Workload & history', check: () => hasPermission('DUTY.REPORT.READ') && (hasScope('ORG') || hasScope('TEAM') || hasScope('OWN')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Workload & history' }], render: renderDutyHistoryPage },
+  { path: '/standby', title: 'Backup & Standby', check: () => hasAnyPermission(['ROSTER.READ', 'STANDBY.ACTIVATE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Backup & Standby' }], render: renderStandbyPage },
+  { path: '/duty-history', title: 'Work History', check: () => hasPermission('DUTY.REPORT.READ') && (hasScope('ORG') || hasScope('TEAM') || hasScope('OWN')), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Work History' }], render: renderDutyHistoryPage },
 
-  { path: '/handover', title: 'Handovers', check: () => hasAnyPermission(['HANDOVER.READ', 'HANDOVER.CREATE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Handovers' }], render: renderHandoverListPage },
-  { path: '/handover/:handoverId', title: 'Handover detail', check: () => hasPermission('HANDOVER.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Handovers', path: '/handover' }, { label: 'Report' }], render: renderHandoverDetailPage },
+  { path: '/handover', title: 'Shift Notes', check: () => hasAnyPermission(['HANDOVER.READ', 'HANDOVER.CREATE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Shift Notes' }], render: renderHandoverListPage },
+  { path: '/handover/:handoverId', title: 'Shift note detail', check: () => hasPermission('HANDOVER.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Shift Notes', path: '/handover' }, { label: 'Note' }], render: renderHandoverDetailPage },
 
   { path: '/notifications', title: 'Notifications', check: () => hasPermission('NOTIFICATION.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Notifications' }], render: renderNotificationsPage },
   { path: '/help', title: 'Help Centre', check: () => hasAnyPermission(['HELP.READ', 'HELP.MANAGE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Help Centre' }], render: renderHelpCentrePage },
-  { path: '/help/manage/new', title: 'Create help article', check: () => hasPermission('HELP.MANAGE'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Help Centre', path: '/help' }, { label: 'Create' }], render: renderHelpManagePage },
-  { path: '/help/manage/:articleId/edit', title: 'Edit help article', check: () => hasPermission('HELP.MANAGE'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Help Centre', path: '/help' }, { label: 'Edit' }], render: renderHelpManagePage },
+  { path: '/help/manage/new', title: 'Create help article', check: () => hasPermission('HELP.MANAGE'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Help Centre', path: '/help' }, { label: 'New article' }], render: renderHelpManagePage },
+  { path: '/help/manage/:articleId/edit', title: 'Edit help article', check: () => hasPermission('HELP.MANAGE'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Help Centre', path: '/help' }, { label: 'Edit article' }], render: renderHelpManagePage },
   { path: '/help/:articleId', title: 'Help article', check: () => hasAnyPermission(['HELP.READ', 'HELP.MANAGE']), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Help Centre', path: '/help' }, { label: 'Article' }], render: renderHelpArticleDetailPage },
 
-  { path: '/audit', title: 'Audit events', check: () => hasPermission('AUDIT.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Audit events' }], render: renderAuditPage },
+  { path: '/audit', title: 'Audit Log', check: () => hasPermission('AUDIT.READ'), breadcrumbs: () => [{ label: 'Overview', path: '/' }, { label: 'Audit Log' }], render: renderAuditPage },
 ];
 
 export async function startApplication(rootEl) {
@@ -216,7 +218,8 @@ export async function startApplication(rootEl) {
             sidebarCollapsed = next;
           },
           onNavigate: router.navigate,
-          onOpenOnboarding: () => openOnboardingModal({ onboarding: session.onboarding }),
+          onOpenOnboarding: () =>
+            openOnboardingModal({ onboarding: getSnapshot().onboarding ?? session.onboarding }),
           onLogout: handleLogout,
           signal,
         });
@@ -283,7 +286,8 @@ export async function startApplication(rootEl) {
           sidebarCollapsed = next;
         },
         onNavigate: router.navigate,
-        onOpenOnboarding: () => openOnboardingModal({ onboarding: session.onboarding }),
+        onOpenOnboarding: () =>
+          openOnboardingModal({ onboarding: getSnapshot().onboarding ?? session.onboarding }),
         onLogout: handleLogout,
         signal,
       });
@@ -312,7 +316,8 @@ export async function startApplication(rootEl) {
         sidebarCollapsed = next;
       },
       onNavigate: router.navigate,
-      onOpenOnboarding: () => openOnboardingModal({ onboarding: getSnapshot().onboarding }),
+      onOpenOnboarding: () =>
+        openOnboardingModal({ onboarding: getSnapshot().onboarding ?? session.onboarding }),
       onLogout: handleLogout,
       signal,
     });
@@ -326,6 +331,7 @@ export async function startApplication(rootEl) {
       params,
       query,
       navigate: router.navigate,
+      onLogout: handleLogout,
       signal,
     });
 

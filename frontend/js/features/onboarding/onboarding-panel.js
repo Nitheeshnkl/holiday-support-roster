@@ -68,6 +68,27 @@ export function openOnboardingModal({ onboarding, initialWalkthrough = null }) {
     bodyNode: body,
     mobileSheet: true,
   });
+  modal.classList.add('onboarding-tour', 'tour-popover');
+  modal.setAttribute('data-tour-popover', 'true');
+
+  const clearSpotlights = () => {
+    document.querySelectorAll('[data-tour-highlight]').forEach((node) => {
+      node.removeAttribute('data-tour-highlight');
+      node.classList.remove('tour-spotlight');
+    });
+  };
+
+  const highlightTarget = (contextKey) => {
+    clearSpotlights();
+    if (!contextKey) return;
+    const target = document.querySelector(`[data-tour="${contextKey}"]`);
+    if (target) {
+      target.setAttribute('data-tour-highlight', 'true');
+      target.classList.add('tour-spotlight');
+    }
+  };
+
+  modal.addEventListener('close', clearSpotlights);
 
   if (!selected) {
     contentHost.appendChild(
@@ -96,6 +117,7 @@ export function openOnboardingModal({ onboarding, initialWalkthrough = null }) {
       if (refreshed) selected = refreshed;
       announceStatus(`Onboarding ${nextStatus.toLowerCase().replace('_', ' ')}.`);
       if (closeOnSuccess) {
+        document.querySelectorAll('.onboarding-banner').forEach((b) => b.remove());
         showToast(
           nextStatus === 'COMPLETED' ? 'Walkthrough completed.' : 'Walkthrough skipped.',
           { variant: 'success' }
@@ -161,6 +183,7 @@ export function openOnboardingModal({ onboarding, initialWalkthrough = null }) {
     );
 
     if (!step) {
+      clearSpotlights();
       contentHost.appendChild(
         createAlert({
           variant: 'info',
@@ -170,6 +193,8 @@ export function openOnboardingModal({ onboarding, initialWalkthrough = null }) {
       );
       return;
     }
+
+    highlightTarget(step.contextKey);
 
     contentHost.appendChild(
       el(

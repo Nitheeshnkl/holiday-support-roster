@@ -45,18 +45,30 @@ export async function renderHolidaysPage({ container, navigate, signal }) {
   const listBtn = el('button', { type: 'button', role: 'tab', className: 'tab-btn', 'aria-selected': 'true' }, 'List view');
   const calBtn = el('button', { type: 'button', role: 'tab', className: 'tab-btn', 'aria-selected': 'false' }, 'Month schedule');
 
-  listBtn.addEventListener('click', () => {
-    viewMode = 'list';
-    listBtn.setAttribute('aria-selected', 'true');
-    calBtn.setAttribute('aria-selected', 'false');
-    load();
-  });
-  calBtn.addEventListener('click', () => {
-    viewMode = 'calendar';
-    calBtn.setAttribute('aria-selected', 'true');
-    listBtn.setAttribute('aria-selected', 'false');
-    load();
-  });
+  let latestData = null;
+
+  listBtn.addEventListener(
+    'click',
+    () => {
+      viewMode = 'list';
+      listBtn.setAttribute('aria-selected', 'true');
+      calBtn.setAttribute('aria-selected', 'false');
+      if (latestData) renderData(latestData);
+      else load();
+    },
+    { signal }
+  );
+  calBtn.addEventListener(
+    'click',
+    () => {
+      viewMode = 'calendar';
+      calBtn.setAttribute('aria-selected', 'true');
+      listBtn.setAttribute('aria-selected', 'false');
+      if (latestData) renderData(latestData);
+      else load();
+    },
+    { signal }
+  );
 
   container.append(
     el(
@@ -91,8 +103,6 @@ export async function renderHolidaysPage({ container, navigate, signal }) {
     el('div', { className: 'tablist', role: 'tablist', 'aria-label': 'Holiday view mode' }, listBtn, calBtn),
     listHost
   );
-
-  let latestData = null;
 
   const renderData = (data) => {
     clear(listHost);
@@ -234,9 +244,6 @@ export async function renderHolidaysPage({ container, navigate, signal }) {
   };
 
   const load = async () => {
-    if (latestData && viewMode) {
-      // If toggling view mode without filter/page change, reuse unless stale
-    }
     clear(listHost);
     listHost.appendChild(createSkeleton({ rows: 5, label: 'Loading holidays…' }));
     try {

@@ -1,4 +1,4 @@
-import { el, clear } from '../../utils/dom.js';
+import { el, clear, appendChildren } from '../../utils/dom.js';
 import { formatDateTimeUtc } from '../../utils/date.js';
 import { bindFormValidation, applyServerFieldErrors, clearServerFieldErrors } from '../../utils/validation.js';
 import { formatEnumLabel } from '../../utils/format.js';
@@ -330,7 +330,7 @@ export async function renderHandoverDetailPage({ container, params, navigate, si
     if (signal?.aborted) return;
     clear(host);
 
-    host.append(
+    appendChildren(host, [
       el(
         'div',
         { className: 'page-header' },
@@ -414,7 +414,7 @@ export async function renderHandoverDetailPage({ container, params, navigate, si
             )
           : el('p', { className: 'muted' }, 'No structured items recorded.')
       )
-    );
+    ]);
   } catch (err) {
     if (isAbortError(err)) return;
     clear(host);

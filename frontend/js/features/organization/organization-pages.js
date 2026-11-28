@@ -279,7 +279,7 @@ export async function renderEmployeeDetailPage({ container, params, navigate, si
           employeesApi.getEmployee(employeeId, { signal }),
           employeesApi.listEmployeeTeamMemberships(employeeId, { page: 0, pageSize: 25, signal }).catch(() => null),
           employeesApi.listEmployeeRoleAssignments(employeeId, { page: 0, pageSize: 25, signal }).catch(() => null),
-          canManageMembership ? employeesApi.listTeams({ page: 0, pageSize: 100, signal }).catch(() => null) : Promise.resolve(null),
+          (hasScope('ORG') || hasScope('TEAM')) ? employeesApi.listTeams({ page: 0, pageSize: 100, signal }).catch(() => null) : Promise.resolve(null),
           employeesApi.listVisibleRoles({ page: 0, pageSize: 100, signal }).catch(() => null),
           historyApi.getDutyHistory({ employeeId, dimension: selectedDimension, page: 0, pageSize: 10, signal }).catch((err) => ({ err })),
         ]);
@@ -616,6 +616,34 @@ export async function renderEmployeeDetailPage({ container, params, navigate, si
       }
 
       // Separate duty-history dimensions (ORG-02)
+      const dutyBody = el(
+        'div',
+        { className: 'stack-sm' },
+        dutyRes?.err
+          ? createAlert({ variant: 'info', message: dutyRes.err.message })
+          : renderDutyDimensionList(dutyRes?.items || [], selectedDimension)
+      );
+      const reloadDuty = async () => {
+        clear(dutyBody);
+        dutyBody.appendChild(createSkeleton({ rows: 3, label: 'Loading duty dimension…' }));
+        try {
+          const nextRes = await historyApi.getDutyHistory({
+            employeeId,
+            dimension: selectedDimension,
+            page: 0,
+            pageSize: 10,
+            signal,
+          });
+          if (signal?.aborted) return;
+          clear(dutyBody);
+          dutyBody.appendChild(renderDutyDimensionList(nextRes?.items || [], selectedDimension));
+        } catch (err) {
+          if (isAbortError(err)) return;
+          clear(dutyBody);
+          dutyBody.appendChild(createAlert({ variant: 'info', message: err.message }));
+        }
+      };
+
       const dutyPanel = el(
         'section',
         { className: 'panel', 'aria-labelledby': 'emp-duty-h' },
@@ -631,13 +659,11 @@ export async function renderEmployeeDetailPage({ container, params, navigate, si
             options: DUTY_DIMENSIONS,
             onChange: (e) => {
               selectedDimension = e.target.value;
-              loadAll();
+              reloadDuty();
             },
           })
         ),
-        dutyRes?.err
-          ? createAlert({ variant: 'info', message: dutyRes.err.message })
-          : renderDutyDimensionList(dutyRes?.items || [], selectedDimension)
+        dutyBody
       );
 
       host.append(

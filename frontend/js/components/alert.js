@@ -1,4 +1,7 @@
 import { el, svgIcon, announceStatus } from '../utils/dom.js';
+import { createSkeleton } from './loading.js';
+
+export { createSkeleton };
 
 export function createAlert({
   variant = 'info',
@@ -60,48 +63,77 @@ export function createAlert({
   );
 }
 
-export function createSkeleton({ rows = 4, label = 'Loading content…' } = {}) {
-  const lines = [el('div', { className: 'skeleton-line skeleton-line--title', 'aria-hidden': 'true' })];
-  for (let i = 0; i < rows; i += 1) {
-    lines.push(
-      el('div', {
-        className: i % 2 === 1 ? 'skeleton-line skeleton-line--short' : 'skeleton-line',
-        'aria-hidden': 'true',
-      })
-    );
-  }
-  return el(
-    'div',
-    { className: 'panel skeleton-group', 'aria-busy': 'true' },
-    el('span', { className: 'visually-hidden' }, label),
-    lines
-  );
-}
-
 export function createEmptyState({
   title,
   description,
+  icon = 'info',
   actionLabel = '',
   actionHref = '',
   onAction = null,
+  secondaryActionLabel = '',
+  secondaryActionHref = '',
+  onSecondaryAction = null,
 } = {}) {
-  let actionNode = null;
-  if (actionLabel && actionHref) {
-    actionNode = el('a', { href: actionHref, className: 'btn btn-primary' }, actionLabel);
+  const actions = [];
+  if (actionLabel && actionHref && typeof onAction === 'function') {
+    actions.push(
+      el(
+        'a',
+        {
+          href: actionHref,
+          className: 'btn btn-primary',
+          onClick: (e) => {
+            e.preventDefault();
+            onAction();
+          },
+        },
+        actionLabel
+      )
+    );
+  } else if (actionLabel && actionHref) {
+    actions.push(el('a', { href: actionHref, className: 'btn btn-primary' }, actionLabel));
   } else if (actionLabel && typeof onAction === 'function') {
-    actionNode = el(
-      'button',
-      { type: 'button', className: 'btn btn-primary', onClick: onAction },
-      actionLabel
+    actions.push(
+      el(
+        'button',
+        { type: 'button', className: 'btn btn-primary', onClick: onAction },
+        actionLabel
+      )
+    );
+  }
+
+  if (secondaryActionLabel && secondaryActionHref && typeof onSecondaryAction === 'function') {
+    actions.push(
+      el(
+        'a',
+        {
+          href: secondaryActionHref,
+          className: 'btn btn-secondary',
+          onClick: (e) => {
+            e.preventDefault();
+            onSecondaryAction();
+          },
+        },
+        secondaryActionLabel
+      )
+    );
+  } else if (secondaryActionLabel && typeof onSecondaryAction === 'function') {
+    actions.push(
+      el(
+        'button',
+        { type: 'button', className: 'btn btn-secondary', onClick: onSecondaryAction },
+        secondaryActionLabel
+      )
     );
   }
 
   return el(
     'div',
     { className: 'empty-state' },
+    icon ? el('div', { className: 'empty-state__icon', 'aria-hidden': 'true' }, svgIcon(icon, { size: 20 })) : null,
     el('h2', {}, title),
     description ? el('p', { className: 'muted' }, description) : null,
-    actionNode
+    actions.length ? el('div', { className: 'empty-state__actions' }, actions) : null
   );
 }
 
@@ -110,8 +142,8 @@ export function showToast(message, { variant = 'info', durationMs = 5000 } = {})
   if (!region) return;
 
   // Do not interrupt when a modal dialog is open; still announce politely
-  const openModal = document.querySelector('dialog[open]');
-  if (openModal) {
+  const openModalEl = document.querySelector('dialog[open]');
+  if (openModalEl) {
     announceStatus(message);
     return;
   }
@@ -133,10 +165,12 @@ export function showToast(message, { variant = 'info', durationMs = 5000 } = {})
     svgIcon('close', { size: 16 })
   );
 
+  const iconName = variant === 'success' ? 'check' : variant === 'error' ? 'alert' : 'info';
+
   const toast = el(
     'div',
     { className: `toast toast--${variant}`, role: 'status' },
-    el('span', {}, message),
+    el('div', { className: 'toast__content' }, svgIcon(iconName, { size: 18 }), el('span', {}, message)),
     closeBtn
   );
 

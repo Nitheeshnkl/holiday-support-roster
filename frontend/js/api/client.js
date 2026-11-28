@@ -1,6 +1,7 @@
 import { getConfig } from '../config.js';
 import { getCsrfToken, setCsrfToken } from '../state/session-store.js';
 import { ApiError, normalizeApiError } from './errors.js';
+import { mockTransport } from './mock-adapter.js';
 
 let unauthorizedHandler = null;
 
@@ -69,7 +70,7 @@ export async function apiRequest(
     skipUnauthorizedRedirect = false,
   } = {}
 ) {
-  const { csrfHeaderName } = getConfig();
+  const { csrfHeaderName, mockMode } = getConfig();
   const upperMethod = method.toUpperCase();
   const headers = {
     Accept: 'application/json',
@@ -100,13 +101,24 @@ export async function apiRequest(
 
   let response;
   try {
-    response = await fetch(buildUrl(path, query), {
-      method: upperMethod,
-      credentials: 'same-origin',
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal,
-    });
+    if (mockMode) {
+      response = await mockTransport({
+        path: path.startsWith('/') ? path : `/${path}`,
+        method: upperMethod,
+        query,
+        headers,
+        body,
+        signal,
+      });
+    } else {
+      response = await fetch(buildUrl(path, query), {
+        method: upperMethod,
+        credentials: 'same-origin',
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
+      });
+    }
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
     throw new ApiError({
